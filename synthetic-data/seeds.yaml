@@ -1,0 +1,22 @@
+# ============================================================
+# ORDM · Synthetic data · deterministic seeds
+# ============================================================
+# Same seed + same row counts => identical generated data, so committed
+# samples are reproducible. Job parameters (widgets) override anything here.
+# ============================================================
+
+base_seed: 42
+
+domains:
+  customer:
+    seed: 1001
+    volumes:
+      # Default row counts. Override via job parameters for scale tests.
+      profiles: 1000
+      accounts: 120
+    fanout:
+      # Max child rows generated per profile (actual count varies 1..max,
+      # deterministically per profile).
+      addresses_per_profile_max: 3
+      contacts_per_profile_max: 3
+      consents_per_profile_max: 4

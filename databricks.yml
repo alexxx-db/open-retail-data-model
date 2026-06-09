@@ -46,9 +46,15 @@ targets:
 #     generate_synthetic_data:
 #       name: "${var.project_name} - Generate Synthetic Data"
 #       tasks:
-#         - task_key: generate
+#         - task_key: generate_customer
 #           notebook_task:
-#             notebook_path: "./synthetic-data/generators/generate.py"
+#             notebook_path: "./synthetic-data/generators/customer.py"
+#             base_parameters:
+#               catalog: "${var.catalog}"
+#               schema: "customer"        # canonical-core: schema = domain name
+#               num_profiles: "1000"
+#               mode: "overwrite"
+#               # seed defaults from synthetic-data/seeds.yaml
 #
 #   dashboards:
 #     unified_customer_view:

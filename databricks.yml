@@ -6,6 +6,21 @@ variables:
     description: "Project name"
     default: "open-retail-data-model"
 
+  # Target Unity Catalog. Keep the minimum-viable model (MVM) and the
+  # extended model (ECM) in SEPARATE catalogs so deployment order never
+  # matters (data-model-principles #14). Never hardcode this in SQL —
+  # canonical-core/*.sql reference it as ${catalog}.
+  catalog:
+    description: "Target Unity Catalog for ORDM (e.g. retail_mvm, retail_ecm)."
+    default: "retail_mvm"
+
+  # Target schema within the catalog. For canonical-core, each domain is
+  # its own schema (customer, product, order, inventory, store,
+  # transaction); set per domain at deploy time. SQL references ${schema}.
+  schema:
+    description: "Target schema (canonical-core: the domain name)."
+    default: "customer"
+
   # The "warehouse_id" variable is used by metric views / dashboards.
   warehouse_id:
     lookup:

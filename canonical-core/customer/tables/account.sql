@@ -1,0 +1,55 @@
+-- ============================================================
+-- ORDM · Canonical Core · Customer domain
+-- Table: account
+-- Layer: canonical core (silver / conformed master)
+-- Version: v1_mvm
+-- Generated: 2026-06-09
+-- LLM-generated: true (maintainer-reviewed before release)
+-- Last reviewed: 2026-06-09
+-- ============================================================
+-- Optional B2B organization account (principle #3). Represents the
+-- business entity a customer transacts on behalf of. SCD2 master.
+-- Individuals are modeled in profile; an account's primary contact
+-- references a profile via business key. No derived metrics here.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ${catalog}.${schema}.account (
+  account_sk            BIGINT GENERATED ALWAYS AS IDENTITY
+                          COMMENT 'Surrogate key. Unique per SCD2 version.',
+  account_id            STRING NOT NULL
+                          COMMENT 'Durable natural/business key for the organization account.',
+
+  account_name          STRING COMMENT 'Registered / legal name of the organization.',
+  account_type          STRING COMMENT 'Organization type. Allowed values: business, government, education, nonprofit, reseller.',
+  registration_number   STRING COMMENT 'Business registration / company number (jurisdiction-dependent).',
+  tax_id                STRING COMMENT 'Tax registration identifier for the organization.',
+  gln                   STRING COMMENT 'GS1 Global Location Number (13 digits) identifying the primary location of the organization.',
+  industry_classification_code STRING COMMENT 'Standard industry classification code (e.g. NAICS/SIC-style); stored as code, not name.',
+
+  parent_account_id     STRING COMMENT 'Business key of the parent organization account for hierarchies; NULL for top-level.',
+  primary_contact_profile_id STRING COMMENT 'Business key of the individual (profile) who is the primary contact for the account.',
+
+  account_status        STRING       COMMENT 'Lifecycle status. Allowed values: prospect, active, inactive, closed.',
+  credit_limit_amount   DECIMAL(18,2) COMMENT 'Assigned credit limit for the account, in currency_code.',
+  currency_code         STRING        COMMENT 'Currency of monetary attributes, ISO 4217 alpha-3 (e.g. USD, EUR).',
+  enrollment_date       DATE          COMMENT 'Date the account was established (ISO 8601 date).',
+
+  -- SCD2 versioning (principle #8)
+  effective_from_date   DATE    NOT NULL COMMENT 'SCD2: inclusive start date this version became effective.',
+  effective_to_date     DATE             COMMENT 'SCD2: exclusive end date; NULL for the current version.',
+  current_flag          BOOLEAN NOT NULL COMMENT 'SCD2: TRUE for the currently active version of this account.',
+
+  -- Audit / provenance
+  record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
+  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded into the canonical core (ISO 8601).',
+
+  CONSTRAINT pk_account PRIMARY KEY (account_sk)
+)
+USING DELTA
+CLUSTER BY (account_id)
+COMMENT 'ORDM canonical-core B2B organization account (SCD2). Optional; used when customers transact on behalf of a business.';
+
+-- PII / sensitive column classification (principle #11). Organization
+-- name is not personal PII; tax id and credit limit are financial-sensitive.
+ALTER TABLE ${catalog}.${schema}.account ALTER COLUMN tax_id              SET TAGS ('dbx_pii_financial' = 'true');
+ALTER TABLE ${catalog}.${schema}.account ALTER COLUMN credit_limit_amount SET TAGS ('dbx_pii_financial' = 'true');

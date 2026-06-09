@@ -81,3 +81,31 @@ SELECT COUNT(*) AS gold_rows FROM ${catalog}.${promo_schema}.gold_trade_promotio
 -- NULL because fewer than 4 trailing non-promoted weeks were available.
 SELECT ROUND(AVG(CASE WHEN baseline_units IS NULL THEN 1.0 ELSE 0.0 END), 4) AS baseline_null_rate
 FROM ${catalog}.${promo_schema}.gold_trade_promotion;
+
+-- ---------- gold_promo_roi (Post-Promotion ROI) ----------
+
+-- check: roi_null_only_when_no_trade_spend | severity: error
+-- ROI may be NULL only when trade_spend is 0/NULL (divide-by-zero guard) or
+-- when incremental margin is itself undefined (no baseline). It must NOT be
+-- NULL when both trade_spend and incremental_margin are present.
+SELECT * FROM ${catalog}.${promo_schema}.gold_promo_roi
+WHERE roi IS NULL
+  AND trade_spend IS NOT NULL AND trade_spend <> 0
+  AND incremental_margin IS NOT NULL;
+
+-- check: gold_promo_roi_rowcount | severity: metric
+SELECT COUNT(*) AS promo_rows FROM ${catalog}.${promo_schema}.gold_promo_roi;
+
+-- check: gold_promo_roi_baseline_coverage | severity: metric
+-- Reported only: share of promos with no usable baseline (NULL/zero), so
+-- incremental/ROI are undefined for them. Surfaced, not a failure.
+SELECT ROUND(AVG(CASE WHEN baseline_units IS NULL OR baseline_units = 0 THEN 1.0 ELSE 0.0 END), 4)
+         AS baseline_missing_rate
+FROM ${catalog}.${promo_schema}.gold_promo_roi;
+
+-- check: gold_promo_roi_negative_net_count | severity: metric
+-- Reported only: number of promos that lost money on a net-incremental basis
+-- (cannibalization + forward-buy outweigh incremental margin). Not clamped.
+SELECT COUNT(*) AS promos_with_negative_net
+FROM ${catalog}.${promo_schema}.gold_promo_roi
+WHERE net_incremental_margin < 0;

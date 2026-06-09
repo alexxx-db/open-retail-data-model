@@ -41,7 +41,7 @@ except ImportError:  # ensure sibling modules are importable when run as a noteb
 # ------------------------------------------------------------
 PRODUCT_COLUMNS = [
     "product_id", "gtin", "sku", "product_name", "brand", "category",
-    "subcategory", "department", "unit_of_measure", "list_price",
+    "subcategory", "department", "unit_of_measure", "list_price", "unit_cost",
     "currency_code", "product_status", "effective_from_date",
     "effective_to_date", "current_flag", "record_source", "load_timestamp",
 ]
@@ -105,6 +105,7 @@ def load_config():
     vols = c.get("volumes", {}) or {}
     fan = c.get("fanout", {}) or {}
     seas = c.get("seasonality", {}) or {}
+    post = c.get("post_promo", {}) or {}
     return {
         "seed": c.get("seed", 2002),
         "products": vols.get("products", 120),
@@ -117,6 +118,9 @@ def load_config():
         "scope_stores_max": fan.get("scope_stores_per_promo_max", 12),
         "promo_duration_weeks_max": fan.get("promo_duration_weeks_max", 4),
         "quarter_weights": seas.get("quarter_weights", [2, 1, 1, 4]),
+        "forward_buy_weeks": post.get("forward_buy_weeks", 2),
+        "forward_buy_dip_factor": post.get("forward_buy_dip_factor", 0.55),
+        "cannibalization_dip_factor": post.get("cannibalization_dip_factor", 0.70),
     }
 
 
@@ -188,6 +192,10 @@ def build_products(spark, n, seed):
         .withColumn("unit_of_measure", "string", values=UNITS_OF_MEASURE)
         .withColumn("_price", "int", minValue=99, maxValue=4999, omit=True)
         .withColumn("list_price", "decimal(18,2)", expr="cast(_price as decimal(18,2)) / 100")
+        # Unit cost = 50-80% of list price (deterministic per product), so per-unit
+        # margin is positive but compresses under deep promotional discounts.
+        .withColumn("_cost_ratio", "int", minValue=50, maxValue=80, omit=True)
+        .withColumn("unit_cost", "decimal(18,2)", expr="cast(_price * _cost_ratio as decimal(18,2)) / 10000")
         .withColumn("currency_code", "string", values=CURRENCIES)
         .withColumn("product_status", "string", values=PRODUCT_STATUS, weights=[90, 7, 3])
     )
@@ -321,7 +329,8 @@ def build_promotion_scope(spark, promo_ids, product_ids, store_ids, seed,
 # Sales fact with promotion attribution
 # ------------------------------------------------------------
 def build_sales(spark, calendar_df, products_current, stores_current,
-                promo_windows, no_promo_sk, seed, density):
+                promo_windows, fb_windows, cannib_windows, no_promo_sk, seed,
+                density, fb_factor, cannib_factor):
     days = calendar_df.select("date_key")
     prod = products_current.select("product_sk", "product_id", "list_price", "currency_code")
     stores = stores_current.select("store_sk", "store_id")
@@ -346,10 +355,35 @@ def build_sales(spark, calendar_df, products_current, stores_current,
     pick = Window.partitionBy("product_sk", "store_sk", "date_key").orderBy(F.col("w_promo_sk").asc_nulls_last())
     matched = matched.withColumn("_rn", F.row_number().over(pick)).where("_rn = 1")
 
+    # The two value-killers, resolved to a per (product, store, day) flag via the
+    # distinct hit sets (range-joined once, so the main path stays an equi-join).
+    keys = base.select("product_sk", "store_sk", "date_key")
+    fb_hit = (keys.join(fb_windows,
+                        on=[keys.product_sk == fb_windows.fb_product_sk,
+                            keys.store_sk == fb_windows.fb_store_sk,
+                            keys.date_key >= fb_windows.fb_start,
+                            keys.date_key <= fb_windows.fb_end], how="inner")
+              .select("product_sk", "store_sk", "date_key").distinct()
+              .withColumn("_is_fb", F.lit(True)))
+    cannib_hit = (keys.join(cannib_windows,
+                            on=[keys.product_sk == cannib_windows.c_product_sk,
+                                keys.store_sk == cannib_windows.c_store_sk,
+                                keys.date_key >= cannib_windows.cstart,
+                                keys.date_key <= cannib_windows.cend], how="inner")
+                  .select("product_sk", "store_sk", "date_key").distinct()
+                  .withColumn("_is_cannib", F.lit(True)))
+    matched = (matched
+               .join(fb_hit, on=["product_sk", "store_sk", "date_key"], how="left")
+               .join(cannib_hit, on=["product_sk", "store_sk", "date_key"], how="left"))
+
     promoted = F.col("w_promo_sk").isNotNull()
-    lift_factor = F.when(promoted, F.lit(1.0) + F.col("w_lift_pct") / F.lit(100.0)).otherwise(F.lit(1.0))
+    # Precedence: promoted (lift) > forward-buy dip > cannibalization dip > normal.
+    mult = (F.when(promoted, F.lit(1.0) + F.col("w_lift_pct") / F.lit(100.0))
+             .when(F.col("_is_fb").isNotNull(), F.lit(float(fb_factor)))
+             .when(F.col("_is_cannib").isNotNull(), F.lit(float(cannib_factor)))
+             .otherwise(F.lit(1.0)))
     disc_pct = F.when(promoted, F.col("w_discount_pct")).otherwise(F.lit(0.0))
-    units = F.round(F.col("base_units") * lift_factor).cast("int")
+    units = F.greatest(F.round(F.col("base_units") * mult).cast("int"), F.lit(0))
     gross = F.round(units * F.col("list_price"), 2)
     discount = F.round(gross * disc_pct / F.lit(100.0), 2)
     return (matched
@@ -431,8 +465,38 @@ def generate(spark, catalog, schemas, cfg, mode):
                              F.col("store_sk").alias("w_store_sk"),
                              "w_promo_sk", "w_promo_id", "start_date", "end_date",
                              "w_discount_pct", "w_lift_pct"))
+    # 5a. forward-buy windows: the N weeks AFTER each promo, per promoted product x store.
+    scope_tbl = spark.table(fq("promo", "promotion_scope")).select("promo_sk", "product_sk", "store_sk")
+    fb_windows = (scope_tbl
+                  .join(promo_current.select("promo_sk", "end_date"), on="promo_sk", how="inner")
+                  .select(F.col("product_sk").alias("fb_product_sk"),
+                          F.col("store_sk").alias("fb_store_sk"),
+                          F.date_add("end_date", 1).alias("fb_start"),
+                          F.date_add("end_date", cfg["forward_buy_weeks"] * 7).alias("fb_end"))
+                  .where("fb_end IS NOT NULL").distinct())
+
+    # 5b. cannibalization windows: substitute SKUs (same category, NOT in scope)
+    #     in the promo's stores during the promo window.
+    prod_cat = products_current.select("product_sk", "category")
+    scope_cat = (scope_tbl
+                 .join(promo_current.select("promo_sk", "start_date", "end_date"), on="promo_sk", how="inner")
+                 .join(prod_cat, on="product_sk", how="inner")
+                 .select("promo_sk", "store_sk", "category", "start_date", "end_date").distinct())
+    scope_products = scope_tbl.select("promo_sk", "product_sk").distinct()
+    cannib_windows = (scope_cat
+                      .join(prod_cat.select(F.col("product_sk").alias("cand_sk"), "category"),
+                            on="category", how="inner")
+                      .join(scope_products.select("promo_sk", F.col("product_sk").alias("cand_sk")),
+                            on=["promo_sk", "cand_sk"], how="left_anti")
+                      .select(F.col("cand_sk").alias("c_product_sk"),
+                              F.col("store_sk").alias("c_store_sk"),
+                              F.col("start_date").alias("cstart"),
+                              F.col("end_date").alias("cend")).distinct())
+
     sales = build_sales(spark, calendar_tbl, products_current, stores_current,
-                        promo_windows, no_promo_sk, seed, cfg["daily_sales_density"])
+                        promo_windows, fb_windows, cannib_windows, no_promo_sk, seed,
+                        cfg["daily_sales_density"], cfg["forward_buy_dip_factor"],
+                        cfg["cannibalization_dip_factor"])
     _write(spark, sales, fq("transaction", "sales"), SALES_COLUMNS, mode)
 
     print("[ordm] Trade Promotion generation complete.")

@@ -25,7 +25,7 @@ The layout is the same in every outcome package. One file per table / per metric
 | Path | Purpose | Status |
 |---|---|---|
 | `tables/<table>.sql` | Outcome-specific extension tables (one file each) | ✅ `promotion`, `promotion_scope` |
-| `gold/gold_trade_promotion.sql` | Consumable gold view | ✅ present |
+| `gold/*.sql` | Consumable gold views | ✅ `gold_trade_promotion`, `gold_weekly_baseline`, `gold_promo_performance`, `gold_promo_roi`, `gold_promo_roi_by_category` |
 | `checks.sql` · `glossary.md` | Data-quality checks · business glossary | ✅ present |
 | `metric-views/<metric>.yml` | One UC Metric View per file (measures, dimensions, joins) | ⚪ planned (the SQL gold view ships first; metric views follow) |
 | `agent-metadata.yml` | Synonyms, display names, glossary terms for Genie / AI-BI | ⚪ planned |

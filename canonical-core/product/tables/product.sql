@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${product_schema}.product (
   department            STRING COMMENT 'Store department the product belongs to.',
   unit_of_measure       STRING COMMENT 'Selling unit of measure. Allowed values: each, kg, g, l, ml, pack.',
   list_price            DECIMAL(18,2) COMMENT 'Standard list (shelf) price in the catalog currency.',
-  currency_code         STRING COMMENT 'Currency of list_price, ISO 4217 alpha-3.',
+  unit_cost             DECIMAL(18,2) COMMENT 'Standard unit cost (COGS) in the catalog currency. Basis for margin = revenue - units * unit_cost. A master cost attribute, not a derived metric.',
+  currency_code         STRING COMMENT 'Currency of list_price / unit_cost, ISO 4217 alpha-3.',
   product_status        STRING COMMENT 'Lifecycle status. Allowed values: active, inactive, discontinued.',
 
   -- SCD2 versioning (principle #8)

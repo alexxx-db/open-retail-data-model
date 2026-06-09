@@ -39,3 +39,10 @@ domains:
     seasonality:
       # Relative promo-density weight per fiscal quarter (Q1..Q4); peak in Q4.
       quarter_weights: [2, 1, 1, 4]
+    post_promo:
+      # The two value-killers, engineered into the synthetic sales so the
+      # Post-Promotion ROI views have a real signal to detect.
+      # forward_buy_weeks must match the N used by gold_promo_roi.
+      forward_buy_weeks: 2
+      forward_buy_dip_factor: 0.55        # promoted SKUs dip to 55% of baseline after the promo
+      cannibalization_dip_factor: 0.70    # substitute SKUs dip to 70% of baseline during the promo

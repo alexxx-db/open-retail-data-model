@@ -11,6 +11,10 @@ Business terms for the Trade Promotion use case. Vendor-neutral; follows the ORD
 | `promotion` | One version per promotion (SCD2) | The trade-promotion dimension — mechanics, funding, planned lift/spend, and the dates/fiscal weeks it ran. Includes the reserved `NO_PROMO` member. |
 | `promotion_scope` | One (promotion, product, store) | The product × store coverage of each promotion. |
 | `gold_trade_promotion` | One (promotion, product, store, fiscal week) | Consumable view tying promoted sales, allocated trade spend, planned lift, and a trailing-demand baseline together. |
+| `gold_weekly_baseline` | One (product, store, fiscal week) | Reusable building block: actual sales + the trailing non-promoted baseline. Single home for the baseline definition. |
+| `gold_promo_performance` | One per promotion | Operational "did it sell?" summary: scope, promoted units/revenue, baseline, planned vs realized lift. |
+| `gold_promo_roi` | One per promotion | Financial "did it pay off?": incremental units/margin, ROI on trade spend, realized vs planned lift, cannibalization, forward buy, net incremental margin. |
+| `gold_promo_roi_by_category` | One (promotion, category) | Drill grain of `gold_promo_roi`. |
 
 ## Terms
 
@@ -25,6 +29,13 @@ Business terms for the Trade Promotion use case. Vendor-neutral; follows the ORD
 | **Trade spend** (`planned_trade_spend`) | The planned promotional investment for the promotion. In `gold_trade_promotion` it is allocated evenly across the promotion's scope (products × stores) and fiscal weeks. |
 | **Promotion scope** | The set of products and stores a promotion applies to (`promotion_scope`). |
 | **NO_PROMO member** | The reserved `promotion` row (`promo_id = 'NO_PROMO'`) that non-promoted sales are attributed to, so the sales fact always resolves to a real promotion surrogate. |
+| **Incremental volume** (`incremental_units`) | Promoted units minus baseline units over the promo window: the extra volume the promotion drove. Not clamped — a negative value means the promotion sold *below* its baseline. |
+| **Lift** | The percentage uplift over baseline. **Planned lift** (`planned_lift_pct`) is the forecast; **realized lift** (`realized_lift_pct = 100 × incremental_units / baseline_units`) is what actually happened. Their gap is the lift variance. |
+| **ROI** (`roi`) | Return on trade investment = `incremental_margin / trade_spend`. NULL-safe: NULL when trade spend is 0/NULL (never a divide-by-zero). |
+| **Cannibalization** (`cannibalization_units` / `_margin`) | Lost volume/margin on **substitute SKUs** — same category, **not** on the promotion, in the promo's stores during the window — that dipped below their own baseline because shoppers switched to the promoted item. |
+| **Forward buy / pantry loading** (`forward_buy_units` / `_margin`) | Lost volume/margin from the **promoted SKUs** selling below baseline in the N fiscal weeks *after* the promotion (default N = 2), because shoppers stocked up during the deal. |
+| **Net incremental margin** (`net_incremental_margin`) | The honest bottom line: `incremental_margin − cannibalization_margin − forward_buy_margin`. Negative = the promotion destroyed value once the two value-killers are netted out. |
+| **Trade spend** (ROI context) | The promotional investment ROI is measured against. ORDM uses **planned** `planned_trade_spend` (realized off-invoice / bill-back / scan-down actuals are not modelled in v1), allocated to the category drill by scope share. |
 
 ## Standards
 

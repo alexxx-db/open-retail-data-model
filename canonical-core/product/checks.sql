@@ -24,3 +24,12 @@ WHERE product_status IS NOT NULL
 SELECT * FROM ${catalog}.${product_schema}.product
 WHERE unit_of_measure IS NOT NULL
   AND unit_of_measure NOT IN ('each', 'kg', 'g', 'l', 'ml', 'pack');
+
+-- check: product_unit_cost_nonnegative | severity: error
+SELECT * FROM ${catalog}.${product_schema}.product
+WHERE unit_cost IS NOT NULL AND unit_cost < 0;
+
+-- check: product_unit_cost_below_list_price | severity: warn
+-- Cost above list price means a structural loss-leader; surface it for review.
+SELECT * FROM ${catalog}.${product_schema}.product
+WHERE unit_cost IS NOT NULL AND list_price IS NOT NULL AND unit_cost > list_price;

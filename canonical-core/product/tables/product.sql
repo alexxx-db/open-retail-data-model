@@ -1,0 +1,46 @@
+-- ============================================================
+-- ORDM · Canonical Core · Product domain
+-- Table: product
+-- Layer: canonical core (silver / conformed master)
+-- Version: v1_mvm
+-- Generated: 2026-06-09
+-- LLM-generated: true (maintainer-reviewed before release)
+-- Last reviewed: 2026-06-09
+-- ============================================================
+-- Conformed product master (SCD2). GS1 identifiers (GTIN/SKU) retained
+-- as business keys. No derived metrics (sales, margin) here — those live
+-- in outcome-package views. Shared by every outcome that scopes on
+-- product, including Promote with Purpose.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ${catalog}.${product_schema}.product (
+  product_sk            BIGINT GENERATED ALWAYS AS IDENTITY
+                          COMMENT 'Surrogate key. Unique per SCD2 version; the join/FK target.',
+  product_id            STRING NOT NULL
+                          COMMENT 'Durable natural/business key for the product.',
+
+  gtin                  STRING COMMENT 'GS1 Global Trade Item Number (UPC/EAN). Not PII.',
+  sku                   STRING COMMENT 'Stock keeping unit code. Not PII.',
+  product_name          STRING COMMENT 'Display name of the product.',
+  brand                 STRING COMMENT 'Brand name (free text).',
+  category              STRING COMMENT 'Merchandising category (top level).',
+  subcategory           STRING COMMENT 'Merchandising subcategory.',
+  department            STRING COMMENT 'Store department the product belongs to.',
+  unit_of_measure       STRING COMMENT 'Selling unit of measure. Allowed values: each, kg, g, l, ml, pack.',
+  list_price            DECIMAL(18,2) COMMENT 'Standard list (shelf) price in the catalog currency.',
+  currency_code         STRING COMMENT 'Currency of list_price, ISO 4217 alpha-3.',
+  product_status        STRING COMMENT 'Lifecycle status. Allowed values: active, inactive, discontinued.',
+
+  -- SCD2 versioning (principle #8)
+  effective_from_date   DATE    NOT NULL COMMENT 'SCD2: inclusive start date this version became effective.',
+  effective_to_date     DATE             COMMENT 'SCD2: exclusive end date; NULL for the current version.',
+  current_flag          BOOLEAN NOT NULL COMMENT 'SCD2: TRUE for the currently active version.',
+
+  record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
+  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded (ISO 8601).',
+
+  CONSTRAINT pk_product PRIMARY KEY (product_sk)
+)
+USING DELTA
+CLUSTER BY (product_id)
+COMMENT 'ORDM canonical-core product master (SCD2). Conformed product entity shared across outcome packages.';

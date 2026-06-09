@@ -21,6 +21,25 @@ variables:
     description: "Target schema (canonical-core: the domain name)."
     default: "customer"
 
+  # Per-domain schema names, used for cross-schema references (e.g. the
+  # sales fact's promotion FK, or the gold view joining several domains).
+  # Each defaults to its domain name; never hardcode a schema in SQL.
+  product_schema:
+    description: "Schema for the product canonical-core domain."
+    default: "product"
+  store_schema:
+    description: "Schema for the store canonical-core domain."
+    default: "store"
+  calendar_schema:
+    description: "Schema for the calendar (fiscal-calendar) canonical-core domain."
+    default: "calendar"
+  transaction_schema:
+    description: "Schema for the transaction (sales) canonical-core domain."
+    default: "transaction"
+  promo_schema:
+    description: "Schema for the Promote with Purpose outcome package."
+    default: "promote_with_purpose"
+
   # The "warehouse_id" variable is used by metric views / dashboards.
   warehouse_id:
     lookup:

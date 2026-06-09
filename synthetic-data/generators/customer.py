@@ -26,11 +26,18 @@
 # ============================================================
 
 import os
+import sys
 
 import dbldatagen as dg
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
+
+try:
+    from _common import RECORD_SOURCE, get_param, _pick, _frac, _count_1_to_max, _write
+except ImportError:  # ensure sibling modules are importable when run as a notebook
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from _common import RECORD_SOURCE, get_param, _pick, _frac, _count_1_to_max, _write
 
 # ------------------------------------------------------------
 # Column contracts — MUST match the table DDL (minus IDENTITY *_sk).
@@ -117,20 +124,6 @@ ACCOUNT_STATUS = ["prospect", "active", "inactive", "closed"]
 CURRENCIES = ["USD", "EUR", "GBP", "CAD", "JPY"]
 INDUSTRY_CODES = ["445110", "448140", "452210", "454110", "722511", "238210"]
 
-RECORD_SOURCE = "synthetic-generator"
-
-
-# ------------------------------------------------------------
-# Parameter handling — widgets when on Databricks, env/defaults otherwise.
-# Never hardcode catalog/schema (guardrail #1).
-# ------------------------------------------------------------
-def get_param(name, default=None):
-    try:
-        return dbutils.widgets.get(name)  # noqa: F821 (injected in notebooks)
-    except Exception:
-        return os.environ.get(name.upper(), default)
-
-
 def load_seed_config():
     """Read defaults from synthetic-data/seeds.yaml if present."""
     cfg = {"seed": 1001, "profiles": 1000, "accounts": 120,
@@ -154,37 +147,8 @@ def load_seed_config():
     return cfg
 
 
-# ------------------------------------------------------------
-# Deterministic helpers (order-independent: pure functions of keys+seed).
-# ------------------------------------------------------------
-def _pick(arr, seed, salt, *keys):
-    """Deterministically pick an element of `arr` from the given keys."""
-    n = len(arr)
-    idx = (F.abs(F.hash(*keys, F.lit(salt), F.lit(seed))) % F.lit(n)).cast("int")
-    return F.element_at(F.array(*[F.lit(v) for v in arr]), idx + F.lit(1))
-
-
-def _frac(seed, salt, *keys):
-    """Deterministic pseudo-random fraction in [0,1)."""
-    return (F.abs(F.hash(*keys, F.lit(salt), F.lit(seed))) % F.lit(10000)) / F.lit(10000.0)
-
-
-def _count_1_to_max(maximum, seed, salt, *keys):
-    """Deterministic integer in [1, maximum]."""
-    return (F.abs(F.hash(*keys, F.lit(salt), F.lit(seed))) % F.lit(maximum)).cast("int") + F.lit(1)
-
-
-# ------------------------------------------------------------
-# Writer — insert non-identity columns; Delta assigns the IDENTITY *_sk.
-# ------------------------------------------------------------
-def _write(spark, df, fqtn, columns, mode):
-    df.select(*columns).createOrReplaceTempView("ordm_gen_tmp")
-    col_list = ", ".join(columns)
-    if mode == "append":
-        spark.sql(f"INSERT INTO {fqtn} ({col_list}) SELECT {col_list} FROM ordm_gen_tmp")
-    else:
-        spark.sql(f"INSERT OVERWRITE TABLE {fqtn} ({col_list}) SELECT {col_list} FROM ordm_gen_tmp")
-    return spark.table(fqtn)
+# Shared deterministic helpers (_pick / _frac / _count_1_to_max) and the
+# _write inserter are imported from _common above.
 
 
 # ------------------------------------------------------------

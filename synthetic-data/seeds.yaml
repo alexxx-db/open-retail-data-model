@@ -20,3 +20,22 @@ domains:
       addresses_per_profile_max: 3
       contacts_per_profile_max: 3
       consents_per_profile_max: 4
+
+  trade_promotion:
+    seed: 2002
+    volumes:
+      products: 120
+      stores: 30
+      promotions: 60
+      # NRF 4-5-4 fiscal calendar: first day must be a Sunday (week start).
+      calendar_start_date: "2024-01-07"
+      calendar_weeks: 110
+      # Probability that a given product x store x day has a sales row.
+      daily_sales_density: 0.06
+    fanout:
+      scope_products_per_promo_max: 15
+      scope_stores_per_promo_max: 12
+      promo_duration_weeks_max: 4
+    seasonality:
+      # Relative promo-density weight per fiscal quarter (Q1..Q4); peak in Q4.
+      quarter_weights: [2, 1, 1, 4]

@@ -5,9 +5,10 @@
 # LLM-generated: true (maintainer-reviewed before release)
 # Last reviewed: 2026-06-09
 # ============================================================
-# Discovers the per-domain check files (canonical-core/<domain>/checks.sql),
-# substitutes ${catalog} (parameter) and ${schema} (= the domain name, from
-# the file path), runs each assertion via spark.sql, and reports violations.
+# Discovers the check files (canonical-core/<domain>/checks.sql and
+# outcome-packages/<pkg>/checks.sql), resolves ${catalog} and the
+# ${<domain>_schema} tokens via the shared resolver (tools/ordm_config.py,
+# which reads databricks.yml), runs each assertion via spark.sql, and reports.
 # Each assertion SELECTs violating rows; 0 rows = PASS. The run FAILS (raises)
 # if any `error`-severity check returns rows; `warn`-severity checks are
 # reported but do not fail the run.
@@ -21,6 +22,7 @@
 import glob
 import os
 import re
+import sys
 
 from pyspark.sql import SparkSession
 
@@ -30,19 +32,11 @@ OUTCOME_GLOB = os.path.join(REPO_ROOT, "outcome-packages", "*", "checks.sql")
 HEADER_RE = re.compile(r"^--\s*check:\s*(?P<name>[\w]+)\s*\|\s*severity:\s*(?P<sev>error|warn|metric)\s*$",
                        re.IGNORECASE)
 
-# Default schema name per cross-schema token. SQL never hardcodes a schema;
-# the runner resolves ${*_schema} tokens here (overridable via job params of
-# the same name).
-SCHEMA_MAP = {
-    "customer_schema": "customer",
-    "product_schema": "product",
-    "store_schema": "store",
-    "calendar_schema": "calendar",
-    "transaction_schema": "transaction",
-    "promo_schema": "promote_with_purpose",
-}
-# An outcome-package directory maps to its own schema (the ${schema} token).
-PACKAGE_SCHEMA = {"promote-with-purpose": "promote_with_purpose"}
+# Single source of truth for ${catalog}/${*_schema} resolution (reads the
+# schema names from databricks.yml). Same resolver used by the tests.
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+from tools.ordm_config import resolve, schema_defaults  # noqa: E402
 
 
 def get_param(name, default=None):
@@ -82,26 +76,14 @@ def parse_checks(sql_text):
 
 
 def discover(filter_set=None):
-    """Yield (label, own_schema, path) for every checks.sql, canonical-core
-    domains and outcome packages alike. `own_schema` resolves the ${schema}
-    token for that file's home."""
-    for path in sorted(glob.glob(CANONICAL_GLOB)):
-        domain = os.path.basename(os.path.dirname(path))
-        if filter_set and domain not in filter_set:
+    """Yield (label, path) for every checks.sql — canonical-core domains and
+    outcome packages alike. SQL uses ${<domain>_schema} tokens resolved by the
+    shared resolver, so no per-file schema bookkeeping is needed here."""
+    for path in sorted(glob.glob(CANONICAL_GLOB)) + sorted(glob.glob(OUTCOME_GLOB)):
+        label = os.path.basename(os.path.dirname(path))
+        if filter_set and label not in filter_set:
             continue
-        yield domain, domain, path
-    for path in sorted(glob.glob(OUTCOME_GLOB)):
-        pkg = os.path.basename(os.path.dirname(path))
-        if filter_set and pkg not in filter_set:
-            continue
-        yield pkg, PACKAGE_SCHEMA.get(pkg, pkg.replace("-", "_")), path
-
-
-def _substitute(text, catalog, own_schema, overrides):
-    text = text.replace("${catalog}", catalog).replace("${schema}", own_schema)
-    for token, default in SCHEMA_MAP.items():
-        text = text.replace("${" + token + "}", overrides.get(token, default))
-    return text
+        yield label, path
 
 
 def run(spark, catalog, filter_set=None, fail_on="error", schema_overrides=None):
@@ -110,8 +92,8 @@ def run(spark, catalog, filter_set=None, fail_on="error", schema_overrides=None)
     schema_overrides = schema_overrides or {}
 
     results = []
-    for label, own_schema, path in discover(filter_set):
-        text = _substitute(open(path).read(), catalog, own_schema, schema_overrides)
+    for label, path in discover(filter_set):
+        text = resolve(open(path).read(), catalog, schema_overrides)
         for name, severity, query in parse_checks(text):
             try:
                 if severity == "metric":
@@ -146,7 +128,7 @@ def main():
     domains = get_param("domains", "")
     fail_on = get_param("fail_on", "error")
     filter_set = [d.strip() for d in domains.split(",") if d.strip()] or None
-    overrides = {k: get_param(k, "") for k in SCHEMA_MAP}
+    overrides = {k: get_param(k, "") for k in schema_defaults()}
     overrides = {k: v for k, v in overrides.items() if v}
     run(spark, catalog, filter_set, fail_on, overrides)
 

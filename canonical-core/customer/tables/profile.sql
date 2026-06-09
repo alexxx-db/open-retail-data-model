@@ -12,11 +12,11 @@
 -- metrics (lifetime value, order counts, scores) live here — those
 -- belong in outcome-package metric views (principle #4).
 --
--- Catalog/schema are injected at deploy time (${catalog}.${schema});
--- never hardcode. For canonical-core, ${schema} = the domain name.
+-- Catalog/schema are injected at deploy time (${catalog}.${customer_schema});
+-- never hardcode. For canonical-core, ${customer_schema} = the domain name.
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS ${catalog}.${schema}.profile (
+CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.profile (
   profile_sk            BIGINT GENERATED ALWAYS AS IDENTITY
                           COMMENT 'Surrogate key. Unique per SCD2 version. Used as the join/FK target for downstream dimensional models.',
   profile_id            STRING NOT NULL
@@ -59,9 +59,9 @@ CLUSTER BY (profile_id)
 COMMENT 'ORDM canonical-core individual-customer master (SCD2). Conformed identity shared by all outcome packages.';
 
 -- PII column classification (principle #11; consumed by dbxmetagen / governance).
-ALTER TABLE ${catalog}.${schema}.profile ALTER COLUMN first_name   SET TAGS ('dbx_pii_name' = 'true');
-ALTER TABLE ${catalog}.${schema}.profile ALTER COLUMN middle_name  SET TAGS ('dbx_pii_name' = 'true');
-ALTER TABLE ${catalog}.${schema}.profile ALTER COLUMN last_name    SET TAGS ('dbx_pii_name' = 'true');
-ALTER TABLE ${catalog}.${schema}.profile ALTER COLUMN date_of_birth SET TAGS ('dbx_pii_dob' = 'true');
-ALTER TABLE ${catalog}.${schema}.profile ALTER COLUMN loyalty_id   SET TAGS ('dbx_pii' = 'true');
-ALTER TABLE ${catalog}.${schema}.profile ALTER COLUMN household_id SET TAGS ('dbx_pii' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.profile ALTER COLUMN first_name   SET TAGS ('dbx_pii_name' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.profile ALTER COLUMN middle_name  SET TAGS ('dbx_pii_name' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.profile ALTER COLUMN last_name    SET TAGS ('dbx_pii_name' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.profile ALTER COLUMN date_of_birth SET TAGS ('dbx_pii_dob' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.profile ALTER COLUMN loyalty_id   SET TAGS ('dbx_pii' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.profile ALTER COLUMN household_id SET TAGS ('dbx_pii' = 'true');

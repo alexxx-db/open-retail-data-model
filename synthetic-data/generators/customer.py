@@ -22,7 +22,7 @@
 #     the table DDL comments.
 #
 # Run as a Databricks notebook task (notebook_path: this file) with
-# parameters: catalog, schema, num_profiles, num_accounts, seed, mode.
+# parameters: catalog, customer_schema, num_profiles, num_accounts, seed, mode.
 # ============================================================
 
 import os
@@ -42,7 +42,7 @@ except ImportError:  # ensure sibling modules are importable when run as a noteb
 # ------------------------------------------------------------
 # Column contracts — MUST match the table DDL (minus IDENTITY *_sk).
 # These drive the INSERT column lists and are checked against the DDL
-# by tools/check_generator_columns.py.
+# by tests/test_customer_model.py.
 # ------------------------------------------------------------
 PROFILE_COLUMNS = [
     "profile_id", "name_prefix", "first_name", "middle_name", "last_name",
@@ -346,15 +346,15 @@ def build_accounts(spark, profiles_current, n, seed):
 # ------------------------------------------------------------
 # Orchestration
 # ------------------------------------------------------------
-def generate(spark, catalog, schema, num_profiles, num_accounts, seed, mode,
+def generate(spark, catalog, customer_schema, num_profiles, num_accounts, seed, mode,
              addr_max=3, contact_max=3, consent_max=4):
     if not catalog:
         raise ValueError("`catalog` parameter is required (guardrail #1: no hardcoded catalog).")
 
     def fq(table):
-        return f"{catalog}.{schema}.{table}"
+        return f"{catalog}.{customer_schema}.{table}"
 
-    print(f"[ordm] generating customer domain into {catalog}.{schema} "
+    print(f"[ordm] generating customer domain into {catalog}.{customer_schema} "
           f"(profiles={num_profiles}, accounts={num_accounts}, seed={seed}, mode={mode})")
 
     # 1. profiles -> write -> read back surrogate keys
@@ -387,12 +387,12 @@ def main():
     spark = SparkSession.builder.getOrCreate()
     cfg = load_seed_config()
     catalog = get_param("catalog", "")
-    schema = get_param("schema", "customer")
+    customer_schema = get_param("customer_schema", "customer")
     num_profiles = int(get_param("num_profiles", cfg["profiles"]))
     num_accounts = int(get_param("num_accounts", cfg["accounts"]))
     seed = int(get_param("seed", cfg["seed"]))
     mode = get_param("mode", "overwrite")
-    generate(spark, catalog, schema, num_profiles, num_accounts, seed, mode,
+    generate(spark, catalog, customer_schema, num_profiles, num_accounts, seed, mode,
              addr_max=int(cfg["addr_max"]), contact_max=int(cfg["contact_max"]),
              consent_max=int(cfg["consent_max"]))
 

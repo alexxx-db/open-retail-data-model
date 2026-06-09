@@ -9,13 +9,33 @@ on:
       - main
 
 jobs:
+  # Static gate: DDL/generator/DQ contract tests + the DuckDB gold-SQL tests.
+  # No Databricks workspace needed, so this runs on every PR and blocks the
+  # bundle deploy below if anything regresses.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run test suite
+        run: pytest -q
+
   validate-and-test:
     runs-on: html_publisher
+    needs: test          # do not deploy unless the test gate passes
 
     # Workspace host comes from a repository variable (Settings > Variables >
     # Actions), never hardcoded in the workflow (guardrail #1). The token
     # stays a secret. Both are exposed to every step via the CLI's standard
     # DATABRICKS_HOST / DATABRICKS_TOKEN environment variables.
+    # NOTE: the repository variable DATABRICKS_HOST must be set (Settings >
+    # Variables > Actions) or the "Configure Databricks CLI" step fails fast.
     env:
       DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
       DATABRICKS_TOKEN: ${{ secrets.DEPLOY_NOTEBOOK_TOKEN }}

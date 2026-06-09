@@ -16,6 +16,8 @@ import pytest
 import sqlglot
 import sqlglot.expressions as E
 
+from tools.ordm_config import resolve
+
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 GENERATOR = os.path.join(REPO, "synthetic-data", "generators", "trade_promotion.py")
 GOLD = os.path.join(REPO, "outcome-packages", "promote-with-purpose", "gold", "gold_trade_promotion.sql")
@@ -29,8 +31,6 @@ TABLES = {
     "promotion": ("outcome-packages/promote-with-purpose/tables/promotion.sql", "promo_sk", "PROMOTION_COLUMNS"),
     "promotion_scope": ("outcome-packages/promote-with-purpose/tables/promotion_scope.sql", "scope_sk", "PROMOTION_SCOPE_COLUMNS"),
 }
-SCHEMA_TOKENS = ["catalog", "schema", "product_schema", "store_schema",
-                 "calendar_schema", "transaction_schema", "promo_schema"]
 COMMENT_LINE = re.compile(r"^\s*([a-z][a-z0-9_]*)\s+[A-Za-z].*?COMMENT\s+'([^']*)'")
 ALLOWED_VALUES = re.compile(r"Allowed values:\s*([^.]+)\.")
 
@@ -38,9 +38,8 @@ ALLOWED_VALUES = re.compile(r"Allowed values:\s*([^.]+)\.")
 # ---------- helpers ----------
 
 def _detok(text):
-    for t in SCHEMA_TOKENS:
-        text = text.replace("${" + t + "}", "x")
-    return text
+    # Resolve ${catalog}/${*_schema} to real identifiers via the shared resolver.
+    return resolve(text, "ordm")
 
 
 def _ddl(table):

@@ -25,3 +25,14 @@ WHERE fiscal_week NOT BETWEEN 1 AND 53
 -- check: calendar_week_date_order | severity: warn
 SELECT * FROM ${catalog}.${calendar_schema}.fiscal_calendar
 WHERE fiscal_week_end_date < fiscal_week_start_date;
+
+-- check: calendar_weeks_per_year_4_5_4 | severity: warn
+-- NRF 4-5-4 allows 52 or 53 weeks per fiscal year. This flags any fiscal year
+-- with MORE than 53 weeks (a calendar bug). Partial leading/trailing years in a
+-- bounded synthetic span are expected and not flagged. NOTE: the synthetic
+-- generator models 52-week years only (no NRF 53rd leap week) — see
+-- synthetic-data/generators/trade_promotion.py.
+SELECT fiscal_year, COUNT(DISTINCT fiscal_week) AS weeks_in_year
+FROM ${catalog}.${calendar_schema}.fiscal_calendar
+GROUP BY fiscal_year
+HAVING COUNT(DISTINCT fiscal_week) > 53;

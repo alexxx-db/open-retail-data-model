@@ -13,7 +13,7 @@
 -- decision is a versioned row with validity window + current_flag.
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS ${catalog}.${schema}.consent (
+CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.consent (
   consent_sk            BIGINT GENERATED ALWAYS AS IDENTITY
                           COMMENT 'Surrogate key. Unique per consent version.',
   consent_id            STRING NOT NULL

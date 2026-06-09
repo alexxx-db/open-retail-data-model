@@ -18,6 +18,7 @@ Domains (each maps to a Unity Catalog schema and contains one file per table und
 | Inventory | [`canonical-core/inventory/`](../canonical-core/inventory/) | Stock positions, movements |
 | Store | [`canonical-core/store/`](../canonical-core/store/) | Locations, formats, departments |
 | Transaction | [`canonical-core/transaction/`](../canonical-core/transaction/) | POS / sales transactions |
+| Calendar | [`canonical-core/calendar/`](../canonical-core/calendar/) | NRF 4-5-4 retail fiscal calendar (conformed time dimension) |
 
 A Customer entity referenced by *Customer 360* and by *Agentic Commerce* is the **same** entity — no redefinition, no drift across outcomes.
 

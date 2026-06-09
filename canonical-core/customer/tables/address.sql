@@ -13,7 +13,7 @@
 -- target; profile_id is the durable join key.
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS ${catalog}.${schema}.address (
+CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.address (
   address_sk            BIGINT GENERATED ALWAYS AS IDENTITY
                           COMMENT 'Surrogate key. Unique per SCD2 version.',
   address_id            STRING NOT NULL
@@ -57,7 +57,7 @@ CLUSTER BY (profile_id)
 COMMENT 'ORDM canonical-core customer postal addresses (SCD2).';
 
 -- PII column classification (principle #11).
-ALTER TABLE ${catalog}.${schema}.address ALTER COLUMN address_line_1 SET TAGS ('dbx_pii_address' = 'true');
-ALTER TABLE ${catalog}.${schema}.address ALTER COLUMN address_line_2 SET TAGS ('dbx_pii_address' = 'true');
-ALTER TABLE ${catalog}.${schema}.address ALTER COLUMN city           SET TAGS ('dbx_pii_address' = 'true');
-ALTER TABLE ${catalog}.${schema}.address ALTER COLUMN postal_code    SET TAGS ('dbx_pii_address' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.address ALTER COLUMN address_line_1 SET TAGS ('dbx_pii_address' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.address ALTER COLUMN address_line_2 SET TAGS ('dbx_pii_address' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.address ALTER COLUMN city           SET TAGS ('dbx_pii_address' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.address ALTER COLUMN postal_code    SET TAGS ('dbx_pii_address' = 'true');

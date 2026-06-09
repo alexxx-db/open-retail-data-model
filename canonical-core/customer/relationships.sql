@@ -18,17 +18,17 @@
 -- ============================================================
 
 -- profile (1) ──< (N) address / contact / consent
-ALTER TABLE ${catalog}.${schema}.address
+ALTER TABLE ${catalog}.${customer_schema}.address
   ADD CONSTRAINT fk_address_profile
-  FOREIGN KEY (profile_sk) REFERENCES ${catalog}.${schema}.profile (profile_sk);
+  FOREIGN KEY (profile_sk) REFERENCES ${catalog}.${customer_schema}.profile (profile_sk);
 
-ALTER TABLE ${catalog}.${schema}.contact
+ALTER TABLE ${catalog}.${customer_schema}.contact
   ADD CONSTRAINT fk_contact_profile
-  FOREIGN KEY (profile_sk) REFERENCES ${catalog}.${schema}.profile (profile_sk);
+  FOREIGN KEY (profile_sk) REFERENCES ${catalog}.${customer_schema}.profile (profile_sk);
 
-ALTER TABLE ${catalog}.${schema}.consent
+ALTER TABLE ${catalog}.${customer_schema}.consent
   ADD CONSTRAINT fk_consent_profile
-  FOREIGN KEY (profile_sk) REFERENCES ${catalog}.${schema}.profile (profile_sk);
+  FOREIGN KEY (profile_sk) REFERENCES ${catalog}.${customer_schema}.profile (profile_sk);
 
 -- ------------------------------------------------------------
 -- Logical relationships on business keys (NOT declared as UC FKs).

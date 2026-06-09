@@ -13,7 +13,7 @@
 -- references a profile via business key. No derived metrics here.
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS ${catalog}.${schema}.account (
+CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.account (
   account_sk            BIGINT GENERATED ALWAYS AS IDENTITY
                           COMMENT 'Surrogate key. Unique per SCD2 version.',
   account_id            STRING NOT NULL
@@ -51,5 +51,5 @@ COMMENT 'ORDM canonical-core B2B organization account (SCD2). Optional; used whe
 
 -- PII / sensitive column classification (principle #11). Organization
 -- name is not personal PII; tax id and credit limit are financial-sensitive.
-ALTER TABLE ${catalog}.${schema}.account ALTER COLUMN tax_id              SET TAGS ('dbx_pii_financial' = 'true');
-ALTER TABLE ${catalog}.${schema}.account ALTER COLUMN credit_limit_amount SET TAGS ('dbx_pii_financial' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.account ALTER COLUMN tax_id              SET TAGS ('dbx_pii_financial' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.account ALTER COLUMN credit_limit_amount SET TAGS ('dbx_pii_financial' = 'true');

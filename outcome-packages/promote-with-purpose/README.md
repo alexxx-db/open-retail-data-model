@@ -22,13 +22,14 @@ A planner can see every **trade promotion** as a structured entity — its mecha
 
 The layout is the same in every outcome package. One file per table / per metric view keeps parallel work conflict-free.
 
-| Path | Purpose |
-|---|---|
-| `tables/<table>.sql` | Outcome-specific extension tables (one file each) |
-| `metric-views/<metric>.yml` | One UC Metric View per file (measures, dimensions, joins) |
-| `agent-metadata.yml` | Synonyms, display names, glossary terms for Genie / AI-BI |
-| `sample-queries.sql` | Example queries |
-| `notebook-templates/` | Reusable notebooks |
+| Path | Purpose | Status |
+|---|---|---|
+| `tables/<table>.sql` | Outcome-specific extension tables (one file each) | ✅ `promotion`, `promotion_scope` |
+| `gold/gold_trade_promotion.sql` | Consumable gold view | ✅ present |
+| `checks.sql` · `glossary.md` | Data-quality checks · business glossary | ✅ present |
+| `metric-views/<metric>.yml` | One UC Metric View per file (measures, dimensions, joins) | ⚪ planned (the SQL gold view ships first; metric views follow) |
+| `agent-metadata.yml` | Synonyms, display names, glossary terms for Genie / AI-BI | ⚪ planned |
+| `sample-queries.sql` · `notebook-templates/` | Example queries · reusable notebooks | ⚪ planned |
 
 ## Builds on (canonical core)
 

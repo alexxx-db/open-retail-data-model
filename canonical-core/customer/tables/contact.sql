@@ -14,7 +14,7 @@
 -- timestamps and status transitions (principle #8).
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS ${catalog}.${schema}.contact (
+CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.contact (
   contact_sk            BIGINT GENERATED ALWAYS AS IDENTITY
                           COMMENT 'Surrogate key.',
   contact_id            STRING NOT NULL
@@ -47,4 +47,4 @@ COMMENT 'ORDM canonical-core customer contact points (email/phone), operational 
 
 -- PII column classification (principle #11). contact_value may hold an
 -- email or a phone number depending on contact_type, so both apply.
-ALTER TABLE ${catalog}.${schema}.contact ALTER COLUMN contact_value SET TAGS ('dbx_pii_email' = 'true', 'dbx_pii_phone' = 'true');
+ALTER TABLE ${catalog}.${customer_schema}.contact ALTER COLUMN contact_value SET TAGS ('dbx_pii_email' = 'true', 'dbx_pii_phone' = 'true');

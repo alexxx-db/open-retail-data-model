@@ -15,6 +15,8 @@ import pytest
 import sqlglot
 import sqlglot.expressions as E
 
+from tools.ordm_config import resolve
+
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CUSTOMER = os.path.join(REPO, "canonical-core", "customer")
 TABLES = ["profile", "address", "contact", "consent", "account"]
@@ -29,7 +31,7 @@ ALLOWED_VALUES = re.compile(r"Allowed values:\s*([^.]+)\.")
 
 def _ddl_text(table):
     raw = open(os.path.join(CUSTOMER, "tables", f"{table}.sql")).read()
-    return raw.replace("${catalog}", "c").replace("${schema}", "s")
+    return resolve(raw, "c")  # ${catalog}/${customer_schema} -> real identifiers
 
 
 def _ddl_columns(table):
@@ -146,19 +148,19 @@ def test_dq_checks_well_formed():
     assert len(names) == len(set(names)), "duplicate check names"
     for name, severity, query in checks:
         assert severity in ("error", "warn")
-        assert "${catalog}.${schema}." in query, f"{name} does not use the catalog/schema tokens"
+        assert "${catalog}.${customer_schema}." in query, f"{name} does not use the catalog/schema tokens"
 
 
 def test_dq_checks_reference_known_tables():
     text = open(CHECKS).read()
-    refs = set(re.findall(r"\$\{catalog\}\.\$\{schema\}\.(\w+)", text))
+    refs = set(re.findall(r"\$\{catalog\}\.\$\{customer_schema\}\.(\w+)", text))
     assert refs <= set(TABLES), f"checks reference unknown tables: {sorted(refs - set(TABLES))}"
 
 
 @pytest.mark.parametrize("table", TABLES)
 def test_every_table_has_a_check(table):
     text = open(CHECKS).read()
-    assert f"${{catalog}}.${{schema}}.{table}" in text, f"no DQ check covers {table}"
+    assert f"${{catalog}}.${{customer_schema}}.{table}" in text, f"no DQ check covers {table}"
 
 
 # ---------- guardrails ----------

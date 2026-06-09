@@ -6,7 +6,7 @@ Lightweight, SQL-first data-quality assertions for the ORDM canonical core. Each
 
 - **Checks are domain-local.** Each domain owns `canonical-core/<domain>/checks.sql` (alongside its `tables/`, `glossary.md`, `relationships.sql`). Keeping checks next to the model keeps parallel work conflict-free.
 - **An assertion is a query that returns the violating rows.** `0 rows = PASS`. There is no separate expectations DSL to learn — if you can write the SQL that finds bad rows, you can write a check.
-- **The runner** (`run_checks.py`) discovers every `canonical-core/*/checks.sql`, substitutes `${catalog}` (parameter) and `${schema}` (the domain name from the path), runs each assertion with `spark.sql`, and **fails the run if any `error`-severity check returns rows**. `warn`-severity checks are reported but non-fatal.
+- **The runner** (`run_checks.py`) discovers every `canonical-core/*/checks.sql` **and** `outcome-packages/*/checks.sql`, resolves `${catalog}` (parameter) and the `${<domain>_schema}` tokens via the shared resolver (`tools/ordm_config.py`, which reads `databricks.yml`), runs each assertion with `spark.sql`, and **fails the run if any `error`-severity check returns rows**. `warn`-severity checks are reported but non-fatal; `metric`-severity checks report a value and never fail.
 
 ## Check format
 

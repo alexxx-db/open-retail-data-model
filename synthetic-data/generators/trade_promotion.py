@@ -122,6 +122,14 @@ def load_config():
 
 # ------------------------------------------------------------
 # Fiscal calendar (NRF 4-5-4), day grain, built in PySpark from a day index.
+#
+# SIMPLIFICATION: this models a fixed 52-week (4-5-4) fiscal year and does NOT
+# insert the NRF 53rd "leap" week that occurs roughly every 5-6 years. For the
+# synthetic demo calendar this is acceptable, but it means multi-year spans can
+# drift from the official NRF calendar at year boundaries. A real deployment
+# should source an authoritative 4-5-4 calendar (incl. 53-week years). The
+# calendar DQ check `calendar_weeks_per_year_4_5_4` reports any fiscal year that
+# is not 52 or 53 weeks so this assumption is visible, not silent.
 # ------------------------------------------------------------
 def build_fiscal_calendar(spark, start_date_str, weeks, seed):
     base_year = int(start_date_str[:4])
@@ -129,7 +137,7 @@ def build_fiscal_calendar(spark, start_date_str, weeks, seed):
     df = spark.range(0, n_days).withColumnRenamed("id", "day_offset")
     start = F.to_date(F.lit(start_date_str))
     w = (F.col("day_offset") / F.lit(7)).cast("int")          # 0-based week index
-    ww = (w % F.lit(52)) + F.lit(1)                            # week within fiscal year (1..52)
+    ww = (w % F.lit(52)) + F.lit(1)                            # week within fiscal year (1..52; see note: no 53rd week)
     quarter = ((ww - F.lit(1)) / F.lit(13)).cast("int") + F.lit(1)
     wiq = ((ww - F.lit(1)) % F.lit(13)) + F.lit(1)            # week within quarter (1..13)
     period_in_q = (F.when(wiq <= F.lit(4), F.lit(1))

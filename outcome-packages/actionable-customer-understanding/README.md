@@ -4,7 +4,17 @@
 
 ## Business outcome
 
-_What this package helps a retailer achieve. (TODO)_
+A per-customer **lifetime value** view — historical realized margin plus a transparent forward estimate — with **RFM** segmentation and **value tiers**, consumable by promo targeting and category growth. Built on the **base** dimensional model (`customer_order_line` + `product` margin + the NRF 4-5-4 calendar), **not** the in-progress C360/CDP layer. Keyed on the customer surrogate; no raw PII. See [`gold/gold_customer_ltv.sql`](gold/gold_customer_ltv.sql) and [`glossary.md`](glossary.md).
+
+### Customer Lifetime Value — files
+
+| Layer | Object |
+|---|---|
+| Gold view | [`gold/gold_customer_ltv.sql`](gold/gold_customer_ltv.sql) |
+| Data quality | [`checks.sql`](checks.sql) |
+| Glossary | [`glossary.md`](glossary.md) |
+| Synthetic data | `synthetic-data/generators/customer_ltv.py` |
+| Builds on | `customer_order_line` (canonical-core/order), `profile`, `product`, `fiscal_calendar` |
 
 ## Contents
 

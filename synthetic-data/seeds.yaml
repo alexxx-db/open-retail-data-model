@@ -66,3 +66,12 @@ domains:
       volatile: 2
       deteriorating: 2
       poor: 2
+
+  customer_ltv:
+    seed: 4004
+    volumes:
+      # Skewed value distribution: most customers buy little (long low-value
+      # tail), a few buy a lot (high-value head). orders ~ max * u^value_skew.
+      max_orders_per_customer: 40
+      value_skew: 4.0
+      lines_per_order_max: 4

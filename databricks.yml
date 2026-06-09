@@ -47,6 +47,12 @@ variables:
   risk_schema:
     description: "Schema for the Early Risk Detection outcome package."
     default: "early_risk_detection"
+  order_schema:
+    description: "Schema for the order canonical-core domain (customer orders). 'orders' avoids the reserved word ORDER."
+    default: "orders"
+  acu_schema:
+    description: "Schema for the Actionable Customer Understanding outcome package."
+    default: "actionable_customer_understanding"
 
   # The "warehouse_id" variable is used by metric views / dashboards.
   warehouse_id:

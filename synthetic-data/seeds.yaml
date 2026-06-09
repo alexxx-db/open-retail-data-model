@@ -46,3 +46,19 @@ domains:
       forward_buy_weeks: 2
       forward_buy_dip_factor: 0.55        # promoted SKUs dip to 55% of baseline after the promo
       cannibalization_dip_factor: 0.70    # substitute SKUs dip to 70% of baseline during the promo
+
+  supplier_monitoring:
+    seed: 3003
+    volumes:
+      suppliers: 40
+      lines_per_supplier: 200
+    # Behaviour mix (relative weights) so supplier scores spread out:
+    #   reliable      - short, low-variance lead times; high OTIF/fill; low defect
+    #   volatile      - high lead-time variance
+    #   deteriorating - lead time and defects worsen over the calendar
+    #   poor          - consistently late, short-shipped, defective
+    profile_weights:
+      reliable: 4
+      volatile: 2
+      deteriorating: 2
+      poor: 2

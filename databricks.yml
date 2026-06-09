@@ -38,6 +38,15 @@ variables:
   promo_schema:
     description: "Schema for the Promote with Purpose outcome package."
     default: "promote_with_purpose"
+  supplier_schema:
+    description: "Schema for the supplier canonical-core domain."
+    default: "supplier"
+  procurement_schema:
+    description: "Schema for the procurement (purchase order) canonical-core domain."
+    default: "procurement"
+  risk_schema:
+    description: "Schema for the Early Risk Detection outcome package."
+    default: "early_risk_detection"
 
   # The "warehouse_id" variable is used by metric views / dashboards.
   warehouse_id:

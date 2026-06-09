@@ -52,6 +52,10 @@ domains:
     volumes:
       suppliers: 40
       lines_per_supplier: 200
+      # A few SKUs sourced by ONE supplier only, so the risk register has a
+      # genuine single-source signal to flag.
+      exclusive_skus: 6
+      exclusive_lines_per_pair: 30
     # Behaviour mix (relative weights) so supplier scores spread out:
     #   reliable      - short, low-variance lead times; high OTIF/fill; low defect
     #   volatile      - high lead-time variance

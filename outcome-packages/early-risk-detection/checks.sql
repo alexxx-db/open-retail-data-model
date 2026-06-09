@@ -43,3 +43,36 @@ FROM ${catalog}.${risk_schema}.gold_supplier_scorecard;
 -- Reported only: spread of composite scores (stdev). > 0 => scores are not all identical.
 SELECT ROUND(STDDEV_POP(composite_score), 4) AS composite_stddev
 FROM ${catalog}.${risk_schema}.gold_supplier_scorecard;
+
+-- ---------- gold_procurement_risk ----------
+
+-- check: risk_hhi_range | severity: error
+-- HHI uses the FRACTIONAL [0,1] convention.
+SELECT * FROM ${catalog}.${risk_schema}.gold_procurement_risk
+WHERE concentration_hhi IS NOT NULL AND concentration_hhi NOT BETWEEN 0 AND 1;
+
+-- check: risk_score_range | severity: error
+SELECT * FROM ${catalog}.${risk_schema}.gold_procurement_risk
+WHERE risk_score IS NOT NULL AND risk_score NOT BETWEEN 0 AND 100;
+
+-- check: risk_tier_domain | severity: error
+SELECT * FROM ${catalog}.${risk_schema}.gold_procurement_risk
+WHERE risk_tier NOT IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
+
+-- check: risk_supplier_fk_orphan | severity: error
+SELECT g.* FROM ${catalog}.${risk_schema}.gold_procurement_risk g
+LEFT JOIN ${catalog}.${supplier_schema}.supplier s ON g.supplier_sk = s.supplier_sk
+WHERE s.supplier_sk IS NULL;
+
+-- check: risk_rowcount | severity: metric
+SELECT COUNT(*) AS risk_rows FROM ${catalog}.${risk_schema}.gold_procurement_risk;
+
+-- check: risk_high_critical_count | severity: metric
+SELECT COUNT(*) AS high_or_critical
+FROM ${catalog}.${risk_schema}.gold_procurement_risk
+WHERE risk_tier IN ('HIGH', 'CRITICAL');
+
+-- check: risk_single_source_count | severity: metric
+SELECT COUNT(*) AS single_source_suppliers
+FROM ${catalog}.${risk_schema}.gold_procurement_risk
+WHERE single_source_flag = true;

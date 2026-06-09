@@ -6,11 +6,11 @@
 
 A merchant / supply-chain lead sees a **per-supplier scorecard** — OTIF, fill rate, lead-time variance, defect rate, price compliance — and a **weighted composite score (0–100)** per supplier × fiscal period, refreshed on a rolling NRF 4-5-4 basis. It is the objective input to procurement-risk decisions, and the foundation a downstream risk-detection use case builds on. See [`gold/gold_supplier_scorecard.sql`](gold/gold_supplier_scorecard.sql) and [`glossary.md`](glossary.md).
 
-### Supplier Score & Monitoring — files
+### Supplier Score & Monitoring + Procurement Risk — files
 
 | Layer | Object |
 |---|---|
-| Gold view | [`gold/gold_supplier_scorecard.sql`](gold/gold_supplier_scorecard.sql) |
+| Gold views | [`gold/gold_supplier_scorecard.sql`](gold/gold_supplier_scorecard.sql), [`gold/gold_procurement_risk.sql`](gold/gold_procurement_risk.sql) |
 | Data quality | [`checks.sql`](checks.sql) |
 | Glossary | [`glossary.md`](glossary.md) |
 | Synthetic data | `synthetic-data/generators/supplier_monitoring.py` |

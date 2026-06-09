@@ -72,6 +72,8 @@ def load_config():
         "seed": c.get("seed", 3003),
         "suppliers": vols.get("suppliers", 40),
         "lines_per_supplier": vols.get("lines_per_supplier", 200),
+        "exclusive_skus": vols.get("exclusive_skus", 6),
+        "exclusive_lines_per_pair": vols.get("exclusive_lines_per_pair", 30),
         "profile_weights": {p: weights.get(p, 1) for p in BEHAVIOR_PROFILES},
     }
 
@@ -131,13 +133,29 @@ def build_suppliers(spark, n, seed, profile_weights):
 
 
 def build_po_lines(spark, params_with_sk, products_current, stores_current,
-                   start_date, n_days, seed, lines_per_supplier):
-    product_ids = [r[0] for r in products_current.select("product_id").collect()]
+                   start_date, n_days, seed, lines_per_supplier,
+                   shared_product_ids, exclusive_pairs, exclusive_lines_per_pair):
     store_ids = [r[0] for r in stores_current.select("store_id").collect()]
     start = F.lit(start_date)
 
-    lines = (params_with_sk.crossJoin(
-                spark.range(0, lines_per_supplier).withColumnRenamed("id", "line_idx")))
+    # Normal lines: a random product from the SHARED pool (excludes sole-sourced SKUs).
+    normal = (params_with_sk
+              .crossJoin(spark.range(0, lines_per_supplier).withColumnRenamed("id", "line_idx"))
+              .withColumn("product_id", _pick(shared_product_ids, seed, "prod", "supplier_id", "line_idx")))
+
+    # Exclusive lines: SKUs sourced by ONE supplier only -> single-source signal.
+    spine = normal
+    if exclusive_pairs:
+        ex_df = spark.createDataFrame(
+            exclusive_pairs,
+            schema=T.StructType([T.StructField("supplier_id", T.StringType()),
+                                 T.StructField("product_id", T.StringType())]))
+        exclusive = (ex_df
+                     .join(params_with_sk, on="supplier_id", how="inner")
+                     .crossJoin(spark.range(0, exclusive_lines_per_pair).withColumnRenamed("id", "_xl"))
+                     .withColumn("line_idx", F.col("_xl") + F.lit(1000000))
+                     .select(*normal.columns))
+        spine = normal.unionByName(exclusive)
 
     # deterministic per (supplier, line) draws
     h = F.abs(F.hash("supplier_id", "line_idx", F.lit(seed)))
@@ -145,12 +163,11 @@ def build_po_lines(spark, params_with_sk, products_current, stores_current,
     f_lt = _frac(seed, "lt", "supplier_id", "line_idx")
     f_price = _frac(seed, "price", "supplier_id", "line_idx")
 
-    lines = (lines
+    lines = (spine
              .withColumn("_h", h)
              .withColumn("order_offset", F.col("_h") % F.lit(max(1, n_days)))
              .withColumn("order_date", F.date_add(start, F.col("order_offset")))
              .withColumn("period_progress", F.col("order_offset") / F.lit(float(max(1, n_days))))
-             .withColumn("product_id", _pick(product_ids, seed, "prod", "supplier_id", "line_idx"))
              .withColumn("store_id", _pick(store_ids, seed, "store", "supplier_id", "line_idx"))
              .withColumn("promised_date", F.date_add(F.col("order_date"), F.col("lt_mean")))
              # actual lead time = planned + noise in [-sigma, +2*sigma] + deterioration over time
@@ -215,11 +232,20 @@ def generate(spark, catalog, schemas, cfg, mode):
     cal = calendar_tbl.agg(F.min("date_key").alias("mn"), F.count(F.lit(1)).alias("cnt")).first()
     start_date, n_days = cal["mn"], int(cal["cnt"])
 
-    # 3. purchase-order lines, keyed to the real supplier surrogate
+    # 3. split the product pool: reserve a few SKUs as sole-sourced (each owned
+    #    by one supplier) so single_source_flag has a genuine signal.
+    product_ids = [r[0] for r in products_current.select("product_id").collect()]
+    supplier_ids = [r[0] for r in supplier_current.select("supplier_id").collect()]
+    m = min(cfg["exclusive_skus"], len(product_ids), len(supplier_ids))
+    exclusive_pairs = [(supplier_ids[i], product_ids[i]) for i in range(m)]
+    shared_product_ids = product_ids[m:] or product_ids   # never leave the pool empty
+
+    # 4. purchase-order lines, keyed to the real supplier surrogate
     params_with_sk = params_df.join(
         supplier_current.select("supplier_id", "supplier_sk"), on="supplier_id", how="inner")
     po_lines = build_po_lines(spark, params_with_sk, products_current, stores_current,
-                              start_date, n_days, seed, cfg["lines_per_supplier"])
+                              start_date, n_days, seed, cfg["lines_per_supplier"],
+                              shared_product_ids, exclusive_pairs, cfg["exclusive_lines_per_pair"])
     _write(spark, po_lines, fq("procurement", "purchase_order_line"), PO_LINE_COLUMNS, mode)
 
     print("[ordm] Supplier Monitoring generation complete.")

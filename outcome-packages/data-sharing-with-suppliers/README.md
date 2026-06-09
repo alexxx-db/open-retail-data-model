@@ -4,7 +4,16 @@
 
 ## Business outcome
 
-_What this package helps a retailer achieve. (TODO)_
+Collaborative **category growth** for joint business planning: per category × fiscal period, the revenue/units/margin, a four-way **growth decomposition** (volume / price / mix / distribution that reconciles to total Δrevenue), category share, and the integrated **promo**, **customer-value** and **supplier** signals — so growth can be analysed with and attributed to suppliers. See [`gold/gold_category_growth.sql`](gold/gold_category_growth.sql) and the placement decision + definitions in [`glossary.md`](glossary.md).
+
+### Category Growth — files
+
+| Layer | Object |
+|---|---|
+| Gold view | [`gold/gold_category_growth.sql`](gold/gold_category_growth.sql) |
+| Data quality | [`checks.sql`](checks.sql) |
+| Glossary + Domain Brief | [`glossary.md`](glossary.md) |
+| Builds on | `sales`, `product`, `fiscal_calendar`; integrates `gold_promo_roi_by_category`, `gold_customer_ltv`, `gold_supplier_scorecard` (NULL-safe) |
 
 ## Contents
 

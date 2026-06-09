@@ -53,6 +53,9 @@ variables:
   acu_schema:
     description: "Schema for the Actionable Customer Understanding outcome package."
     default: "actionable_customer_understanding"
+  dss_schema:
+    description: "Schema for the Data Sharing with Suppliers outcome package."
+    default: "data_sharing_with_suppliers"
 
   # The "warehouse_id" variable is used by metric views / dashboards.
   warehouse_id:

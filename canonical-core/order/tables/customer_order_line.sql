@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${order_schema}.customer_order_line (
   store_sk              BIGINT COMMENT 'FK to store.store_sk (version-specific).',
   store_id              STRING NOT NULL COMMENT 'Durable store business key.',
 
-  order_date            DATE COMMENT 'Order date. FK to fiscal_calendar.date_key (ISO 8601).',
+  order_date            DATE COMMENT 'Order date (calendar day). FK to fiscal_calendar.date_key (ISO 8601).',
+  event_timestamp       TIMESTAMP COMMENT 'Instant the order line was placed (UTC, ISO 8601) — event-time, distinct from load_timestamp (processing-time).',
   units                 INT  COMMENT 'Units purchased on this line.',
   gross_amount          DECIMAL(18,2) COMMENT 'Gross line amount before discount, in the reporting/base currency.',
   net_amount            DECIMAL(18,2) COMMENT 'Net line amount after discount, in the reporting/base currency.',

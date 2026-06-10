@@ -47,3 +47,14 @@ GROUP BY s.date_key;
 SELECT COUNT(DISTINCT currency_code) AS distinct_currencies
 FROM ${catalog}.${transaction_schema}.sales
 HAVING COUNT(DISTINCT currency_code) > 1;
+
+-- check: sales_fk_points_to_current_version | severity: metric
+-- Informational: share (%) of sales rows whose product_sk / store_sk resolve to a
+-- NON-current dimension version. Historical facts may legitimately reference prior
+-- SCD2 versions, so this is a metric (never fails) that documents the expectation.
+SELECT ROUND(100.0 * SUM(
+         CASE WHEN COALESCE(p.is_current, true) AND COALESCE(st.is_current, true)
+              THEN 0 ELSE 1 END) / COUNT(*), 2) AS pct_sales_noncurrent_version
+FROM ${catalog}.${transaction_schema}.sales s
+LEFT JOIN ${catalog}.${product_schema}.product p ON s.product_sk = p.product_sk
+LEFT JOIN ${catalog}.${store_schema}.store st ON s.store_sk = st.store_sk;

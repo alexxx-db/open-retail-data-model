@@ -39,3 +39,14 @@ ALTER TABLE ${catalog}.${promo_schema}.promotion
 ALTER TABLE ${catalog}.${promo_schema}.promotion
   ADD CONSTRAINT chk_promotion_spend_nonnegative
   CHECK (planned_trade_spend IS NULL OR planned_trade_spend >= 0);
+
+-- Enum / state-domain CHECK constraints (H-10).
+ALTER TABLE ${catalog}.${promo_schema}.promotion
+  ADD CONSTRAINT chk_promotion_type
+  CHECK (promo_type IS NULL OR promo_type IN ('TPR', 'FEATURE', 'DISPLAY', 'FEATURE_AND_DISPLAY', 'BOGO', 'COUPON', 'BUNDLE'));
+ALTER TABLE ${catalog}.${promo_schema}.promotion
+  ADD CONSTRAINT chk_promotion_funding_type
+  CHECK (funding_type IS NULL OR funding_type IN ('OFF_INVOICE', 'BILL_BACK', 'SCAN_DOWN', 'LUMP_SUM'));
+ALTER TABLE ${catalog}.${promo_schema}.promotion
+  ADD CONSTRAINT chk_promotion_funded_by
+  CHECK (funded_by IS NULL OR funded_by IN ('SUPPLIER', 'RETAILER', 'SHARED'));

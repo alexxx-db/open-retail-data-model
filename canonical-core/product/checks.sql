@@ -41,3 +41,41 @@ WHERE unit_cost IS NOT NULL AND list_price IS NOT NULL AND unit_cost > list_pric
 SELECT COUNT(DISTINCT currency_code) AS distinct_currencies
 FROM ${catalog}.${product_schema}.product
 HAVING COUNT(DISTINCT currency_code) > 1;
+
+-- ------------------------------------------------------------
+-- product_price (temporal price history)
+-- ------------------------------------------------------------
+
+-- check: product_price_keys_not_null | severity: error
+SELECT * FROM ${catalog}.${product_schema}.product_price
+WHERE product_price_sk IS NULL OR product_price_id IS NULL OR product_id IS NULL
+   OR price_type IS NULL OR effective_from_date IS NULL OR is_current IS NULL;
+
+-- check: product_price_type_domain | severity: error
+SELECT * FROM ${catalog}.${product_schema}.product_price
+WHERE price_type NOT IN ('list', 'cost', 'promotional', 'contract');
+
+-- check: product_price_amount_nonnegative | severity: error
+SELECT * FROM ${catalog}.${product_schema}.product_price
+WHERE amount IS NOT NULL AND amount < 0;
+
+-- check: product_price_single_current_per_type | severity: error
+-- At most one current price per (product, price_type).
+SELECT product_id, price_type, COUNT(*) AS current_rows
+FROM ${catalog}.${product_schema}.product_price
+WHERE is_current = true
+GROUP BY product_id, price_type
+HAVING COUNT(*) > 1;
+
+-- check: product_price_product_orphan | severity: error
+-- Every priced product_id must exist in the product master.
+SELECT pp.product_id FROM ${catalog}.${product_schema}.product_price pp
+LEFT JOIN (SELECT DISTINCT product_id FROM ${catalog}.${product_schema}.product) p
+  ON pp.product_id = p.product_id
+WHERE p.product_id IS NULL
+GROUP BY pp.product_id;
+
+-- check: product_price_single_reporting_currency | severity: error
+SELECT COUNT(DISTINCT currency_code) AS distinct_currencies
+FROM ${catalog}.${product_schema}.product_price
+HAVING COUNT(DISTINCT currency_code) > 1;

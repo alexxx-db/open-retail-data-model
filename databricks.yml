@@ -59,6 +59,9 @@ variables:
   order_schema:
     description: "Schema for the order canonical-core domain (customer orders). 'orders' avoids the reserved word ORDER."
     default: "orders"
+  payment_schema:
+    description: "Schema for the payment canonical-core domain (payments / refunds / adjustments)."
+    default: "payment"
   acu_schema:
     description: "Schema for the Actionable Customer Understanding outcome package."
     default: "actionable_customer_understanding"

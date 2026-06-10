@@ -22,21 +22,27 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 try:
-    from _common import (RECORD_SOURCE, get_param, load_domain_config, _frac, _write,
+    from _common import (RECORD_SOURCE, get_param, load_domain_config, _frac, _pick, _write,
                          attach_random_dim)
 except ImportError:  # ensure sibling modules are importable when run as a notebook
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from _common import (RECORD_SOURCE, get_param, load_domain_config, _frac, _write,
+    from _common import (RECORD_SOURCE, get_param, load_domain_config, _frac, _pick, _write,
                          attach_random_dim)
 
-# Column contract — MUST match the DDL (minus IDENTITY order_line_sk).
+# Column contracts — MUST match the DDL (minus IDENTITY *_sk).
 # Verified against the DDL by tests/test_customer_ltv.py.
 CUSTOMER_ORDER_LINE_COLUMNS = [
     "order_line_id", "order_id", "profile_sk", "profile_id", "product_sk",
-    "product_id", "store_sk", "store_id", "order_date", "units",
+    "product_id", "store_sk", "store_id", "order_date", "event_timestamp", "units",
     "gross_amount", "net_amount", "currency_code", "transaction_currency_code",
     "record_source", "load_timestamp",
 ]
+PAYMENT_COLUMNS = [
+    "payment_id", "order_id", "profile_sk", "profile_id", "payment_type",
+    "payment_method", "payment_status", "amount", "currency_code",
+    "transaction_currency_code", "event_timestamp", "record_source", "load_timestamp",
+]
+PAYMENT_METHODS = ["card", "cash", "wallet", "bank_transfer", "gift_card", "voucher"]
 
 
 def load_config():
@@ -93,9 +99,42 @@ def build_order_lines(spark, profiles_current, products_current, stores_current,
              .withColumn("transaction_currency_code", F.lit(base_currency))
              .withColumn("order_line_id",
                          F.concat_ws("-", F.lit("ORDL"), F.col("profile_id"), F.col("order_idx"), F.col("line_idx")))
+             # Event-time (UTC): the order date plus a deterministic intraday hour.
+             .withColumn("event_timestamp",
+                         F.expr("cast(order_date as timestamp) + make_interval(0, 0, 0, 0, "
+                                "cast(abs(hash(profile_id, order_idx, line_idx)) % 24 as int))"))
              .withColumn("record_source", F.lit(RECORD_SOURCE))
              .withColumn("load_timestamp", F.current_timestamp()))
     return lines
+
+
+def build_payments(spark, order_lines, base_currency, seed):
+    """One 'sale' payment per order (sum of its line net amounts) plus a small
+    share of partial refunds — the tender/settlement side of the order fact."""
+    orders = (order_lines.groupBy("order_id", "profile_sk", "profile_id")
+              .agg(F.round(F.sum("net_amount"), 2).alias("amount"),
+                   F.max("event_timestamp").alias("event_timestamp")))
+    method = _pick(PAYMENT_METHODS, seed, "pm", "order_id")
+    sale = (orders
+            .withColumn("payment_type", F.lit("sale"))
+            .withColumn("payment_status", F.lit("captured"))
+            .withColumn("payment_method", method)
+            .withColumn("payment_id", F.concat_ws("-", F.lit("PAY"), F.col("order_id"))))
+    # ~12% of orders draw a partial refund a couple of days later.
+    refund = (orders
+              .where(_frac(seed, "refund", "order_id") < F.lit(0.12))
+              .withColumn("amount", F.round(F.col("amount") * F.lit(0.3), 2))
+              .withColumn("payment_type", F.lit("refund"))
+              .withColumn("payment_status", F.lit("refunded"))
+              .withColumn("payment_method", method)
+              .withColumn("event_timestamp",
+                          F.col("event_timestamp") + F.expr("make_interval(0, 0, 0, 2)"))
+              .withColumn("payment_id", F.concat_ws("-", F.lit("PAYR"), F.col("order_id"))))
+    return (sale.unionByName(refund)
+            .withColumn("currency_code", F.lit(base_currency))
+            .withColumn("transaction_currency_code", F.lit(base_currency))
+            .withColumn("record_source", F.lit(RECORD_SOURCE))
+            .withColumn("load_timestamp", F.current_timestamp()))
 
 
 def generate(spark, catalog, schemas, cfg, mode, base_currency="USD"):
@@ -120,6 +159,10 @@ def generate(spark, catalog, schemas, cfg, mode, base_currency="USD"):
                               start_date, n_days, seed, cfg["max_orders"], cfg["value_skew"],
                               cfg["lines_per_order_max"], base_currency)
     _write(spark, lines, fq("order", "customer_order_line"), CUSTOMER_ORDER_LINE_COLUMNS, mode)
+
+    # Payment events (tender/settlement side of the orders): sales + partial refunds.
+    payments = build_payments(spark, lines, base_currency, seed)
+    _write(spark, payments, fq("payment", "payment"), PAYMENT_COLUMNS, mode)
     print("[ordm] Customer LTV generation complete.")
 
 
@@ -133,6 +176,7 @@ def main():
         "store": get_param("store_schema", "store"),
         "calendar": get_param("calendar_schema", "calendar"),
         "order": get_param("order_schema", "orders"),
+        "payment": get_param("payment_schema", "payment"),
     }
     mode = get_param("mode", "overwrite")
     base_currency = get_param("base_currency", "USD")

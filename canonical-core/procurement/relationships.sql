@@ -34,3 +34,8 @@ ALTER TABLE ${catalog}.${procurement_schema}.purchase_order_line
   ADD CONSTRAINT chk_pol_quantities
   CHECK (ordered_qty >= 0 AND received_qty >= 0 AND defective_qty >= 0
          AND received_qty <= ordered_qty);
+
+-- Enum / state-domain CHECK constraint (H-10).
+ALTER TABLE ${catalog}.${procurement_schema}.purchase_order_line
+  ADD CONSTRAINT chk_pol_order_status
+  CHECK (order_status IS NULL OR order_status IN ('open', 'received', 'closed', 'cancelled'));

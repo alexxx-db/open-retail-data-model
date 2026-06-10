@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${product_schema}.product (
 
   gtin                  STRING COMMENT 'GS1 Global Trade Item Number (UPC/EAN). Not PII.',
   sku                   STRING COMMENT 'Stock keeping unit code. Not PII.',
+  -- Variant hierarchy: product (this row) is a sellable SKU/GTIN; style_id groups
+  -- the variants of one style/model, so SKUs roll up to a style (product -> style -> SKU).
+  style_id              STRING COMMENT 'Parent style/model this SKU is a variant of. SKUs sharing a style_id are variants (e.g. colour/size). NULL for non-variant products.',
+  color                 STRING COMMENT 'Variant-defining attribute: colour (free text). NULL if not applicable.',
+  size                  STRING COMMENT 'Variant-defining attribute: size (free text, e.g. S/M/L, 500ml). NULL if not applicable.',
   product_name          STRING COMMENT 'Display name of the product.',
   brand                 STRING COMMENT 'Brand name (free text).',
   category              STRING COMMENT 'Merchandising category (top level).',

@@ -42,10 +42,16 @@ except ImportError:  # ensure sibling modules are importable when run as a noteb
 # Verified against the DDL by tests/test_trade_promotion.py.
 # ------------------------------------------------------------
 PRODUCT_COLUMNS = [
-    "product_id", "gtin", "sku", "product_name", "brand", "category",
-    "subcategory", "department", "unit_of_measure", "list_price", "unit_cost",
-    "currency_code", "transaction_currency_code", "product_status", "effective_from_date",
-    "effective_to_date", "is_current", "created_timestamp", "source_updated_timestamp",
+    "product_id", "gtin", "sku", "style_id", "color", "size", "product_name",
+    "brand", "category", "subcategory", "department", "unit_of_measure",
+    "list_price", "unit_cost", "currency_code", "transaction_currency_code",
+    "product_status", "effective_from_date", "effective_to_date", "is_current",
+    "created_timestamp", "source_updated_timestamp", "record_source", "load_timestamp",
+]
+PRODUCT_PRICE_COLUMNS = [
+    "product_price_id", "product_id", "price_type", "amount", "currency_code",
+    "transaction_currency_code", "effective_from_date", "effective_to_date",
+    "is_current", "created_timestamp", "source_updated_timestamp",
     "record_source", "load_timestamp",
 ]
 FX_RATE_COLUMNS = [
@@ -102,6 +108,9 @@ BRANDS = ["brand_a", "brand_b", "brand_c", "brand_d", "private_label"]
 REGIONS = ["north", "south", "east", "west", "central"]
 COUNTRY_CODES = ["US", "CA", "GB", "FR", "DE"]
 CURRENCIES = ["USD", "EUR", "GBP", "CAD"]
+COLORS = ["red", "blue", "green", "black", "white", "natural"]
+SIZES = ["xs", "s", "m", "l", "xl", "500ml", "1l"]
+PRICE_TYPES = ["list", "cost", "promotional", "contract"]
 # Representative source -> USD rates. The fx_rate dimension is the conversion
 # reference an ingest pipeline would use; synthetic monetary columns are already
 # emitted in base, so these populate fx_rate for completeness/auditing.
@@ -197,6 +206,11 @@ def build_products(spark, n, seed, base_currency):
         .withColumn("product_id", "string", expr="concat('SKU-', lpad(cast(id as string), 8, '0'))")
         .withColumn("gtin", "string", expr="lpad(cast((id * 13 + 100000000000) as string), 13, '0')")
         .withColumn("sku", "string", expr="concat('S', lpad(cast(id as string), 7, '0'))")
+        # Variant hierarchy: every ~3 consecutive SKUs share a style; colour/size
+        # are the variant-defining attributes (product -> style -> SKU).
+        .withColumn("style_id", "string", expr="concat('STY-', lpad(cast(cast(id / 3 as int) as string), 6, '0'))")
+        .withColumn("color", "string", values=COLORS)
+        .withColumn("size", "string", values=SIZES)
         .withColumn("product_name", "string", expr="concat('Product ', lpad(cast(id as string), 6, '0'))")
         .withColumn("brand", "string", values=BRANDS)
         .withColumn("category", "string", values=CATEGORIES)
@@ -218,6 +232,27 @@ def build_products(spark, n, seed, base_currency):
         .withColumn("product_status", "string", values=PRODUCT_STATUS, weights=[90, 7, 3])
     )
     return _stamp_scd2(spec.build(), "2018-01-01")
+
+
+def build_product_price(spark, products_current, base_currency):
+    """Price history rows mirroring the product dim's current list / cost
+    snapshot (one current version per product x price_type). The table supports
+    full SCD2 history; the synthetic seed emits the current snapshot."""
+    priced = products_current.select(
+        "product_id", "transaction_currency_code", "effective_from_date",
+        F.expr("stack(2, 'list', list_price, 'cost', unit_cost) as (price_type, amount)"))
+    return (priced
+            .withColumn("amount", F.col("amount").cast("decimal(18,4)"))
+            .withColumn("currency_code", F.lit(base_currency))
+            .withColumn("product_price_id",
+                        F.concat_ws("|", F.col("product_id"), F.col("price_type"),
+                                    F.col("effective_from_date")))
+            .withColumn("effective_to_date", F.lit(None).cast("date"))
+            .withColumn("is_current", F.lit(True))
+            .withColumn("created_timestamp", F.col("effective_from_date").cast("timestamp"))
+            .withColumn("source_updated_timestamp", F.col("effective_from_date").cast("timestamp"))
+            .withColumn("record_source", F.lit(RECORD_SOURCE))
+            .withColumn("load_timestamp", F.current_timestamp()))
 
 
 def build_fx_rate(spark, calendar_df, base_currency, seed):
@@ -475,6 +510,9 @@ def generate(spark, catalog, schemas, cfg, mode, base_currency="USD"):
     _write(spark, build_stores(spark, cfg["stores"], seed), fq("store", "store"), STORE_COLUMNS, mode)
     products_current = spark.table(fq("product", "product")).where("is_current = true")
     stores_current = spark.table(fq("store", "store")).where("is_current = true")
+    # Price history (mirrors the current list/cost snapshot on the product dim).
+    _write(spark, build_product_price(spark, products_current, base_currency),
+           fq("product", "product_price"), PRODUCT_PRICE_COLUMNS, mode)
 
     # 3. promotion calendar (seasonal, windowed)
     weeks_rows = [r.asDict() for r in calendar_tbl

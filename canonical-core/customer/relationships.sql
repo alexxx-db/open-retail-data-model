@@ -42,3 +42,33 @@ ALTER TABLE ${catalog}.${customer_schema}.consent
 --   contact.profile_id                  ->  profile.profile_id   (durable join, is_current = TRUE)
 --   consent.profile_id                  ->  profile.profile_id   (durable join, is_current = TRUE)
 -- ------------------------------------------------------------
+
+-- ============================================================
+-- Enum / state-domain CHECK constraints (H-10; always-on enforcement).
+-- Lists match the "Allowed values" in each table's column comments.
+-- ============================================================
+ALTER TABLE ${catalog}.${customer_schema}.profile
+  ADD CONSTRAINT chk_profile_customer_status
+  CHECK (customer_status IS NULL OR customer_status IN ('prospect', 'active', 'inactive', 'closed'));
+
+ALTER TABLE ${catalog}.${customer_schema}.address
+  ADD CONSTRAINT chk_address_type
+  CHECK (address_type IS NULL OR address_type IN ('billing', 'shipping', 'home', 'work', 'other'));
+ALTER TABLE ${catalog}.${customer_schema}.address
+  ADD CONSTRAINT chk_address_status
+  CHECK (address_status IS NULL OR address_status IN ('active', 'inactive'));
+
+ALTER TABLE ${catalog}.${customer_schema}.contact
+  ADD CONSTRAINT chk_contact_status
+  CHECK (contact_status IS NULL OR contact_status IN ('active', 'inactive', 'bounced', 'opted_out'));
+
+ALTER TABLE ${catalog}.${customer_schema}.consent
+  ADD CONSTRAINT chk_consent_status
+  CHECK (consent_status IS NULL OR consent_status IN ('granted', 'withdrawn', 'pending', 'expired'));
+
+ALTER TABLE ${catalog}.${customer_schema}.account
+  ADD CONSTRAINT chk_account_type
+  CHECK (account_type IS NULL OR account_type IN ('business', 'government', 'education', 'nonprofit', 'reseller'));
+ALTER TABLE ${catalog}.${customer_schema}.account
+  ADD CONSTRAINT chk_account_status
+  CHECK (account_status IS NULL OR account_status IN ('prospect', 'active', 'inactive', 'closed'));

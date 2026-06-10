@@ -18,6 +18,7 @@ from tools.ordm_config import resolve, view_select_body
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DDL = os.path.join(REPO, "canonical-core", "order", "tables", "customer_order_line.sql")
+PAYMENT_DDL = os.path.join(REPO, "canonical-core", "payment", "tables", "payment.sql")
 LTV = os.path.join(REPO, "outcome-packages", "actionable-customer-understanding", "gold", "gold_customer_ltv.sql")
 GENERATOR = os.path.join(REPO, "synthetic-data", "generators", "customer_ltv.py")
 
@@ -42,6 +43,16 @@ def test_generator_columns_match_ddl():
     gen = {e.value for n in mod.body if isinstance(n, ast.Assign)
            and getattr(n.targets[0], "id", "") == "CUSTOMER_ORDER_LINE_COLUMNS" for e in n.value.elts}
     assert ddl == gen, f"drift: missing={sorted(ddl - gen)} extra={sorted(gen - ddl)}"
+
+
+def test_payment_columns_match_ddl():
+    create = next(s for s in sqlglot.parse(resolve(open(PAYMENT_DDL).read(), "c"), read="databricks", error_level="ignore")
+                  if isinstance(s, E.Create))
+    ddl = {c.name for c in create.find_all(E.ColumnDef) if c.name != "payment_sk"}
+    mod = ast.parse(open(GENERATOR).read())
+    gen = {e.value for n in mod.body if isinstance(n, ast.Assign)
+           and getattr(n.targets[0], "id", "") == "PAYMENT_COLUMNS" for e in n.value.elts}
+    assert ddl == gen, f"payment drift: missing={sorted(ddl - gen)} extra={sorted(gen - ddl)}"
 
 
 def test_view_exposes_required_columns():

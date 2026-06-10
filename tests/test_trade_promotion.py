@@ -25,6 +25,7 @@ GOLD = os.path.join(REPO, "outcome-packages", "promote-with-purpose", "gold", "g
 # table -> (ddl path, surrogate key, generator *_COLUMNS constant)
 TABLES = {
     "product": ("canonical-core/product/tables/product.sql", "product_sk", "PRODUCT_COLUMNS"),
+    "product_price": ("canonical-core/product/tables/product_price.sql", "product_price_sk", "PRODUCT_PRICE_COLUMNS"),
     "store": ("canonical-core/store/tables/store.sql", "store_sk", "STORE_COLUMNS"),
     "fiscal_calendar": ("canonical-core/calendar/tables/fiscal_calendar.sql", "calendar_sk", "FISCAL_CALENDAR_COLUMNS"),
     "fx_rate": ("canonical-core/calendar/tables/fx_rate.sql", "fx_rate_sk", "FX_RATE_COLUMNS"),

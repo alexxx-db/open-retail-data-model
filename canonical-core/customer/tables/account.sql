@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.account (
 )
 USING DELTA
 CLUSTER BY (account_id)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'ORDM canonical-core B2B organization account (SCD2). Optional; used when customers transact on behalf of a business.';
 
 -- PII / sensitive column classification (principle #11). Organization

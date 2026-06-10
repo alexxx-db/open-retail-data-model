@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.contact (
 )
 USING DELTA
 CLUSTER BY (profile_id)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'ORDM canonical-core customer contact points (email/phone), operational current-state.';
 
 -- PII column classification (principle #11). contact_value may hold an

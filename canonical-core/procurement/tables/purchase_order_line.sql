@@ -50,4 +50,6 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${procurement_schema}.purchase_order_line 
 )
 USING DELTA
 CLUSTER BY (supplier_sk, product_sk, order_date)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'ORDM canonical-core purchase-order line fact (order + receipt + defect + price). Feeds the supplier scorecard.';

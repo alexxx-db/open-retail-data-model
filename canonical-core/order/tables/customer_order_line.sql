@@ -43,4 +43,6 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${order_schema}.customer_order_line (
 )
 USING DELTA
 CLUSTER BY (profile_sk, order_date)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'ORDM canonical-core customer-attributed order line fact. Feeds customer lifetime value (CLV/RFM).';

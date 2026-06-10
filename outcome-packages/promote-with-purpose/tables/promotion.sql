@@ -49,4 +49,6 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${promo_schema}.promotion (
 )
 USING DELTA
 CLUSTER BY (promo_sk)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'Trade-promotion dimension (SCD2) for the Promote with Purpose outcome package.';

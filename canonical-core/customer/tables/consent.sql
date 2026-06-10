@@ -43,4 +43,6 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.consent (
 )
 USING DELTA
 CLUSTER BY (profile_id)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'ORDM canonical-core customer consent — the single source of truth for opt-ins and processing permissions.';

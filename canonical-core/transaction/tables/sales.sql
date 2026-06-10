@@ -51,4 +51,6 @@ USING DELTA
 -- a clustering key -- it is low-cardinality (most rows carry the single NO_PROMO
 -- member) and would cluster poorly.
 CLUSTER BY (date_key, product_sk, store_sk)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'ORDM canonical-core POS sales fact (product x store x day). Carries promo_sk for promotion attribution.';

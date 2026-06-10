@@ -46,4 +46,6 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${calendar_schema}.fiscal_calendar (
 )
 USING DELTA
 CLUSTER BY (date_key)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'ORDM canonical-core NRF 4-5-4 retail fiscal calendar (day grain). Conformed time dimension.';

@@ -22,10 +22,12 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 try:
-    from _common import RECORD_SOURCE, get_param, load_domain_config, _pick, _frac, _write
+    from _common import (RECORD_SOURCE, get_param, load_domain_config, _frac, _write,
+                         attach_random_dim)
 except ImportError:  # ensure sibling modules are importable when run as a notebook
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from _common import RECORD_SOURCE, get_param, load_domain_config, _pick, _frac, _write
+    from _common import (RECORD_SOURCE, get_param, load_domain_config, _frac, _write,
+                         attach_random_dim)
 
 # Column contract — MUST match the DDL (minus IDENTITY order_line_sk).
 # Verified against the DDL by tests/test_customer_ltv.py.
@@ -49,9 +51,10 @@ def load_config():
 
 def build_order_lines(spark, profiles_current, products_current, stores_current,
                       start_date, n_days, seed, max_orders, value_skew, lines_per_order_max):
-    product_ids = [r[0] for r in products_current.select("product_id").collect()]
-    store_ids = [r[0] for r in stores_current.select("store_id").collect()]
     start = F.lit(start_date)
+    prod_dim = products_current.select("product_sk", "product_id", "list_price")
+    store_dim = stores_current.select("store_sk", "store_id")
+    n_products, n_stores = prod_dim.count(), store_dim.count()
 
     # orders per customer from a skewed draw: most low, a few high.
     customers = (profiles_current.select("profile_sk", "profile_id")
@@ -66,16 +69,17 @@ def build_order_lines(spark, profiles_current, products_current, stores_current,
               .withColumn("order_id", F.concat_ws("-", F.lit("ORD"), F.col("profile_id"), F.col("order_idx")))
               .withColumn("_oh", F.abs(F.hash("profile_id", "order_idx", F.lit(seed))))
               .withColumn("order_date", F.date_add(start, F.col("_oh") % F.lit(max(1, n_days))))
-              .withColumn("store_id", _pick(store_ids, seed, "store", "profile_id", "order_idx"))
               .withColumn("n_lines", (F.col("_oh") % F.lit(max(1, lines_per_order_max)) + F.lit(1)).cast("int")))
+    # ship-to store per order via broadcast join (no driver collect / array literal)
+    orders = attach_random_dim(orders, store_dim, n_stores, "store", seed, "profile_id", "order_idx")
 
     lines = (orders
              .withColumn("line_idx", F.explode(F.expr("sequence(1, n_lines)")))
-             .withColumn("product_id", _pick(product_ids, seed, "prod", "profile_id", "order_idx", "line_idx"))
              .withColumn("units",
-                         (F.abs(F.hash("profile_id", "order_idx", "line_idx", F.lit(seed))) % F.lit(5) + F.lit(1)).cast("int"))
-             .join(products_current.select("product_id", "product_sk", "list_price"), on="product_id", how="inner")
-             .join(stores_current.select("store_id", "store_sk"), on="store_id", how="inner")
+                         (F.abs(F.hash("profile_id", "order_idx", "line_idx", F.lit(seed))) % F.lit(5) + F.lit(1)).cast("int")))
+    # product per line via broadcast join (attaches product_sk, product_id, list_price)
+    lines = attach_random_dim(lines, prod_dim, n_products, "prod", seed, "profile_id", "order_idx", "line_idx")
+    lines = (lines
              .withColumn("gross_amount", F.round(F.col("units") * F.col("list_price"), 2))
              # net = gross less a 0-20% discount draw
              .withColumn("net_amount",

@@ -41,4 +41,6 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${store_schema}.store (
 )
 USING DELTA
 CLUSTER BY (store_id)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'ORDM canonical-core store/location master (SCD2). Conformed store entity shared across outcome packages.';

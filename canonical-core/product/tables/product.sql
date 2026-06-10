@@ -44,4 +44,6 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${product_schema}.product (
 )
 USING DELTA
 CLUSTER BY (product_id)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'ORDM canonical-core product master (SCD2). Conformed product entity shared across outcome packages.';

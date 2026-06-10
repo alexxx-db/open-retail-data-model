@@ -39,4 +39,6 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${supplier_schema}.supplier (
 )
 USING DELTA
 CLUSTER BY (supplier_id)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'ORDM canonical-core supplier/vendor master (SCD2). Conformed supplier entity shared across supply-chain outcome packages.';

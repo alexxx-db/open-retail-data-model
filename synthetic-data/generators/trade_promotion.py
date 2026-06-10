@@ -30,10 +30,12 @@ from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
 try:
-    from _common import RECORD_SOURCE, get_param, load_domain_config, _frac, _write
+    from _common import (RECORD_SOURCE, get_param, load_domain_config, _write,
+                         attach_random_dim)
 except ImportError:  # ensure sibling modules are importable when run as a notebook
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from _common import RECORD_SOURCE, get_param, load_domain_config, _frac, _write
+    from _common import (RECORD_SOURCE, get_param, load_domain_config, _write,
+                         attach_random_dim)
 
 # ------------------------------------------------------------
 # Column contracts — MUST match the table DDL (minus IDENTITY *_sk).
@@ -331,16 +333,22 @@ def build_promotion_scope(spark, promo_ids, product_ids, store_ids, seed,
 def build_sales(spark, calendar_df, products_current, stores_current,
                 promo_windows, fb_windows, cannib_windows, no_promo_sk, seed,
                 density, fb_factor, cannib_factor):
-    days = calendar_df.select("date_key")
-    prod = products_current.select("product_sk", "product_id", "list_price", "currency_code")
+    prod = products_current.select("product_sk", "product_id", "list_price")
     stores = stores_current.select("store_sk", "store_id")
+    days = calendar_df.select("date_key")
+    n_p, n_s, n_d = prod.count(), stores.count(), days.count()
 
-    # Candidate product x store x day, thinned by density (deterministic).
-    base = (prod.crossJoin(stores).crossJoin(days)
-            .withColumn("_keep", _frac(seed, "sales", "product_id", "store_id", "date_key") < F.lit(density))
-            .where("_keep")
-            .withColumn("base_units",
-                        (F.abs(F.hash("product_id", "store_id", "date_key", F.lit(seed))) % F.lit(18) + F.lit(3))))
+    # Generate exactly the density-thinned number of rows and attach a random
+    # product / store / day to each via broadcast joins -- NO product x store x
+    # day cartesian. Collisions (same product,store,day) are deduped downstream
+    # by the attribution window, so the output is the unique selling combinations.
+    n_target = max(1, int(n_p * n_s * n_d * density))
+    base = spark.range(0, n_target).withColumnRenamed("id", "_rid")
+    base = attach_random_dim(base, prod, n_p, "prod", seed, "_rid")
+    base = attach_random_dim(base, stores, n_s, "store", seed, "_rid")
+    base = attach_random_dim(base, days, n_d, "day", seed, "_rid")
+    base = base.withColumn("base_units",
+                           (F.abs(F.hash("product_id", "store_id", "date_key", F.lit(seed))) % F.lit(18) + F.lit(3)))
 
     # Attribute to a promotion when the day falls inside a scoped promo window.
     matched = (base.join(

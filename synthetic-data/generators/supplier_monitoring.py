@@ -25,10 +25,12 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
 try:
-    from _common import RECORD_SOURCE, get_param, load_domain_config, _pick, _frac, _write
+    from _common import (RECORD_SOURCE, get_param, load_domain_config, _pick, _frac,
+                         _write, attach_random_dim)
 except ImportError:  # ensure sibling modules are importable when run as a notebook
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from _common import RECORD_SOURCE, get_param, load_domain_config, _pick, _frac, _write
+    from _common import (RECORD_SOURCE, get_param, load_domain_config, _pick, _frac,
+                         _write, attach_random_dim)
 
 # ------------------------------------------------------------
 # Column contracts — MUST match the DDL (minus IDENTITY *_sk).
@@ -135,7 +137,8 @@ def build_suppliers(spark, n, seed, profile_weights):
 def build_po_lines(spark, params_with_sk, products_current, stores_current,
                    start_date, n_days, seed, lines_per_supplier,
                    shared_product_ids, exclusive_pairs, exclusive_lines_per_pair):
-    store_ids = [r[0] for r in stores_current.select("store_id").collect()]
+    store_dim = stores_current.select("store_sk", "store_id")
+    n_stores = store_dim.count()
     start = F.lit(start_date)
 
     # Normal lines: a random product from the SHARED pool (excludes sole-sourced SKUs).
@@ -168,7 +171,6 @@ def build_po_lines(spark, params_with_sk, products_current, stores_current,
              .withColumn("order_offset", F.col("_h") % F.lit(max(1, n_days)))
              .withColumn("order_date", F.date_add(start, F.col("order_offset")))
              .withColumn("period_progress", F.col("order_offset") / F.lit(float(max(1, n_days))))
-             .withColumn("store_id", _pick(store_ids, seed, "store", "supplier_id", "line_idx"))
              .withColumn("promised_date", F.date_add(F.col("order_date"), F.col("lt_mean")))
              # actual lead time = planned + noise in [-sigma, +2*sigma] + deterioration over time
              .withColumn("_lt_noise",
@@ -188,10 +190,11 @@ def build_po_lines(spark, params_with_sk, products_current, stores_current,
              .withColumn("defective_qty", F.round(F.col("received_qty") * F.col("_defect_eff")).cast("int"))
              .withColumn("returned_qty", F.round(F.col("defective_qty") * F.lit(0.4)).cast("int")))
 
-    # attach product/store surrogate keys + price basis (single join each)
+    # store via broadcast join (no driver collect / array literal); product key +
+    # price basis via a single join on the already-chosen product_id.
+    lines = attach_random_dim(lines, store_dim, n_stores, "store", seed, "supplier_id", "line_idx")
     lines = (lines
              .join(products_current.select("product_id", "product_sk", "list_price"), on="product_id", how="inner")
-             .join(stores_current.select("store_id", "store_sk"), on="store_id", how="inner")
              .withColumn("contract_price", F.round(F.col("list_price") * F.lit(0.6), 2))
              # compliant unless this line draws an overage (profile probability)
              .withColumn("unit_price",

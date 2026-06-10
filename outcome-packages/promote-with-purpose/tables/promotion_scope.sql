@@ -33,4 +33,6 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${promo_schema}.promotion_scope (
 )
 USING DELTA
 CLUSTER BY (promo_sk, product_sk, store_sk)
+-- Deletion vectors speed row-level MERGE/UPDATE (SCD2 version closes, corrections).
+TBLPROPERTIES (delta.enableDeletionVectors = true)
 COMMENT 'Promotion product x store coverage bridge for the Promote with Purpose outcome package.';

@@ -1,10 +1,10 @@
 """Tests for the Trade Promotion use case.
 
 Static contract tests (no engine) keep the DDL, generator, DQ checks and the
-gold view mutually consistent. Engine tests use an in-process DuckDB fixture
-to validate the *real* gold SQL logic — promotion attribution, the trailing
-non-promoted baseline (including the < 4 weeks -> NULL rule), and that the
-gold view returns rows on a representative dataset.
+gold view mutually consistent. Engine tests run the *real* gold SQL on Spark
+(the Databricks engine) over temp-view fixtures — promotion attribution, the
+trailing non-promoted baseline (including the < 4 weeks -> NULL rule), and that
+the gold view returns rows on a representative dataset.
 """
 
 import ast
@@ -147,9 +147,13 @@ def test_no_hardcoded_or_license():
     assert not bad, f"hardcoded identifier or license header (guardrail #1/#4): {bad}"
 
 
-# ---------- engine: DuckDB fixture for the real gold SQL ----------
+# ---------- engine: Spark fixture for the real gold SQL ----------
 
-def _gold_body_for_duckdb():
+import datetime
+
+
+def _gold_body():
+    # The REAL gold SQL with UC names rewritten to fixture temp views; Spark runs it verbatim.
     raw = open(GOLD).read()
     body = raw[raw.index(" AS", raw.index("CREATE OR REPLACE VIEW")) + 3:].strip().rstrip(";")
     repl = [
@@ -165,75 +169,85 @@ def _gold_body_for_duckdb():
     return body
 
 
-def _fixture_con():
-    duckdb = pytest.importorskip("duckdb")
-    con = duckdb.connect()
-    con.execute("CREATE TABLE product(product_sk INT, product_id VARCHAR, product_name VARCHAR, category VARCHAR, subcategory VARCHAR, brand VARCHAR)")
-    con.execute("INSERT INTO product VALUES (1,'P1','Prod 1','beverages','regular','brand_a')")
-    con.execute("CREATE TABLE store(store_sk INT, store_id VARCHAR, store_name VARCHAR, store_format VARCHAR, region VARCHAR)")
-    con.execute("INSERT INTO store VALUES (1,'S1','Store 1','supermarket','north')")
-    # one calendar row per week (week start date), weeks 1..13
-    con.execute("CREATE TABLE fiscal_calendar(date_key DATE, fiscal_week_id INT, fiscal_week_index INT)")
+def _wk_date(wk):
+    return datetime.date(2024, 1, 7) + datetime.timedelta(days=(wk - 1) * 7)
+
+
+def _build(spark):
+    spark.createDataFrame(
+        [(1, "P1", "Prod 1", "beverages", "regular", "brand_a")],
+        "product_sk int, product_id string, product_name string, category string, subcategory string, brand string",
+    ).createOrReplaceTempView("product")
+    spark.createDataFrame(
+        [(1, "S1", "Store 1", "supermarket", "north")],
+        "store_sk int, store_id string, store_name string, store_format string, region string",
+    ).createOrReplaceTempView("store")
+    spark.createDataFrame(
+        [(_wk_date(wk), 202400 + wk, wk) for wk in range(1, 14)],
+        "date_key date, fiscal_week_id int, fiscal_week_index int",
+    ).createOrReplaceTempView("fiscal_calendar")
+    spark.createDataFrame(
+        [(99, "NO_PROMO", "No Promotion", None, None, None, None, None, None, None, True),
+         (1, "P-1", "Promo 1", "TPR", "SCAN_DOWN", "SHARED", 50.0, 1000.0, 202412, 202413, True),
+         (2, "P-2", "Promo 2", "FEATURE", "BILL_BACK", "SUPPLIER", 30.0, 600.0, 202403, 202403, True)],
+        "promo_sk int, promo_id string, promo_name string, promo_type string, funding_type string, "
+        "funded_by string, planned_lift_pct double, planned_trade_spend double, fiscal_week_start int, "
+        "fiscal_week_end int, current_flag boolean",
+    ).createOrReplaceTempView("promotion")
+    spark.createDataFrame([(1, 1, 1), (2, 1, 1)], "promo_sk int, product_sk int, store_sk int") \
+         .createOrReplaceTempView("promotion_scope")
+    sales = []
     for wk in range(1, 14):
-        con.execute(f"INSERT INTO fiscal_calendar VALUES (DATE '2024-01-07' + INTERVAL {(wk-1)*7} DAY, {202400+wk}, {wk})")
-    con.execute("""CREATE TABLE promotion(promo_sk INT, promo_id VARCHAR, promo_name VARCHAR,
-        promo_type VARCHAR, funding_type VARCHAR, funded_by VARCHAR, planned_lift_pct DECIMAL(6,2),
-        planned_trade_spend DECIMAL(18,2), fiscal_week_start INT, fiscal_week_end INT, current_flag BOOLEAN)""")
-    con.execute("INSERT INTO promotion VALUES (99,'NO_PROMO','No Promotion',NULL,NULL,NULL,NULL,NULL,NULL,NULL,true)")
-    con.execute("INSERT INTO promotion VALUES (1,'P-1','Promo 1','TPR','SCAN_DOWN','SHARED',50,1000,202412,202413,true)")
-    con.execute("INSERT INTO promotion VALUES (2,'P-2','Promo 2','FEATURE','BILL_BACK','SUPPLIER',30,600,202403,202403,true)")
-    con.execute("CREATE TABLE promotion_scope(promo_sk INT, product_sk INT, store_sk INT)")
-    con.execute("INSERT INTO promotion_scope VALUES (1,1,1),(2,1,1)")
-    con.execute("CREATE TABLE sales(product_sk INT, store_sk INT, promo_sk INT, promo_id VARCHAR, date_key DATE, units INT, net_revenue DECIMAL(18,2))")
-    for wk in range(1, 14):
-        d = f"DATE '2024-01-07' + INTERVAL {(wk-1)*7} DAY"
         if wk == 3:
-            con.execute(f"INSERT INTO sales VALUES (1,1,2,'P-2',{d},15,150)")
+            sales.append((1, 1, 2, "P-2", _wk_date(wk), 15, 150.0))
         elif wk in (12, 13):
-            con.execute(f"INSERT INTO sales VALUES (1,1,1,'P-1',{d},15,150)")
+            sales.append((1, 1, 1, "P-1", _wk_date(wk), 15, 150.0))
         else:
-            con.execute(f"INSERT INTO sales VALUES (1,1,99,'NO_PROMO',{d},10,100)")
-    con.execute("CREATE VIEW gold AS " + _gold_body_for_duckdb())
-    return con
+            sales.append((1, 1, 99, "NO_PROMO", _wk_date(wk), 10, 100.0))
+    spark.createDataFrame(
+        sales, "product_sk int, store_sk int, promo_sk int, promo_id string, date_key date, units int, net_revenue double"
+    ).createOrReplaceTempView("sales")
+    spark.sql("CREATE OR REPLACE TEMP VIEW gold AS " + _gold_body())
 
 
-def test_gold_view_returns_rows():
-    con = _fixture_con()
-    n = con.execute("SELECT COUNT(*) FROM gold").fetchone()[0]
+def test_gold_view_returns_rows(spark):
+    _build(spark)
+    n = spark.sql("SELECT COUNT(*) AS n FROM gold").first().n
     assert n == 3, f"expected 3 promo x product x store x week rows, got {n}"
 
 
-def test_promoted_week_carries_promo_and_units():
-    con = _fixture_con()
-    row = con.execute("""SELECT promoted_units, planned_trade_spend, planned_lift_pct
-                         FROM gold WHERE promo_id='P-1' AND fiscal_week_id=202412""").fetchone()
+def test_promoted_week_carries_promo_and_units(spark):
+    _build(spark)
+    row = spark.sql("SELECT promoted_units, planned_trade_spend, planned_lift_pct "
+                    "FROM gold WHERE promo_id='P-1' AND fiscal_week_id=202412").first()
     assert row is not None, "missing P-1 / week 202412 row"
-    units, spend, lift = row
-    assert units == 15, f"promoted_units={units}"
-    assert float(spend) == 500.0, f"allocated trade spend={spend}"   # 1000 / (1 scope * 2 weeks)
-    assert float(lift) == 50.0
+    assert row.promoted_units == 15, f"promoted_units={row.promoted_units}"
+    assert float(row.planned_trade_spend) == 500.0   # 1000 / (1 scope * 2 weeks)
+    assert float(row.planned_lift_pct) == 50.0
 
 
-def test_baseline_trailing_average_and_null_rule():
-    con = _fixture_con()
+def test_baseline_trailing_average_and_null_rule(spark):
+    _build(spark)
     # >= 4 trailing non-promoted weeks -> mean (all 10s)
-    b12 = con.execute("SELECT baseline_units FROM gold WHERE promo_id='P-1' AND fiscal_week_id=202412").fetchone()[0]
+    b12 = spark.sql("SELECT baseline_units FROM gold WHERE promo_id='P-1' AND fiscal_week_id=202412").first()[0]
     assert float(b12) == 10.0, f"week 12 baseline={b12}"
     # < 4 trailing non-promoted weeks -> NULL
-    b3 = con.execute("SELECT baseline_units FROM gold WHERE promo_id='P-2' AND fiscal_week_id=202403").fetchone()[0]
+    b3 = spark.sql("SELECT baseline_units FROM gold WHERE promo_id='P-2' AND fiscal_week_id=202403").first()[0]
     assert b3 is None, f"week 3 baseline should be NULL, got {b3}"
 
 
-def test_attribution_logic_inside_vs_outside_window():
+def test_attribution_logic_inside_vs_outside_window(spark):
     # Mirrors the generator's build_sales attribution: a sale inside a scoped
     # promo's date window carries the promo surrogate; outside it carries NO_PROMO.
-    duckdb = pytest.importorskip("duckdb")
-    con = duckdb.connect()
-    con.execute("CREATE TABLE base(product_sk INT, store_sk INT, date_key DATE)")
-    con.execute("INSERT INTO base VALUES (1,1,DATE '2024-03-25'),(1,1,DATE '2024-06-01')")
-    con.execute("CREATE TABLE win(w_product_sk INT, w_store_sk INT, w_promo_sk INT, start_date DATE, end_date DATE)")
-    con.execute("INSERT INTO win VALUES (1,1,7,DATE '2024-03-20',DATE '2024-03-31')")
-    rows = con.execute("""
+    spark.createDataFrame(
+        [(1, 1, datetime.date(2024, 3, 25)), (1, 1, datetime.date(2024, 6, 1))],
+        "product_sk int, store_sk int, date_key date",
+    ).createOrReplaceTempView("base")
+    spark.createDataFrame(
+        [(1, 1, 7, datetime.date(2024, 3, 20), datetime.date(2024, 3, 31))],
+        "w_product_sk int, w_store_sk int, w_promo_sk int, start_date date, end_date date",
+    ).createOrReplaceTempView("win")
+    rows = spark.sql("""
         WITH m AS (
           SELECT b.date_key,
                  row_number() OVER (PARTITION BY b.product_sk,b.store_sk,b.date_key
@@ -243,7 +257,7 @@ def test_attribution_logic_inside_vs_outside_window():
           LEFT JOIN win w ON b.product_sk=w.w_product_sk AND b.store_sk=w.w_store_sk
                          AND b.date_key>=w.start_date AND b.date_key<=w.end_date)
         SELECT date_key, COALESCE(w_promo_sk, 99) AS promo_sk FROM m WHERE rn=1 ORDER BY date_key
-    """).fetchall()
-    result = {str(d): sk for d, sk in rows}
+    """).collect()
+    result = {str(r.date_key): r.promo_sk for r in rows}
     assert result["2024-03-25"] == 7, "sale inside the window must carry the promo surrogate"
     assert result["2024-06-01"] == 99, "sale outside the window must carry NO_PROMO (99)"

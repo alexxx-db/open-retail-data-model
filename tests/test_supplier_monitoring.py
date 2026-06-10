@@ -1,10 +1,10 @@
 """Tests for the Supplier Score & Monitoring use case.
 
 Static contract tests keep the DDL, generator and gold view consistent and
-guardrail-clean. Engine tests run the REAL gold_supplier_scorecard SQL against
-an in-process DuckDB fixture with hand-computed KPIs, proving each KPI, the
-composite from documented weights, and that OTIF requires BOTH on-time AND
-in-full.
+guardrail-clean. Engine tests run the REAL gold_supplier_scorecard SQL on Spark
+(the Databricks engine) over temp-view fixtures with hand-computed KPIs, proving
+each KPI, the composite from documented weights, and that OTIF requires BOTH
+on-time AND in-full.
 """
 
 import ast
@@ -82,72 +82,74 @@ def test_no_banned_or_hardcoded():
     assert not bad, f"banned/hardcoded/license in: {bad}"
 
 
-# ---------- engine: DuckDB fixture running the real scorecard SQL ----------
+# ---------- engine: Spark fixture running the real scorecard SQL ----------
+
+import datetime
 
 _SUBS = [
     ("${catalog}.${procurement_schema}.purchase_order_line", "purchase_order_line"),
     ("${catalog}.${calendar_schema}.fiscal_calendar", "fiscal_calendar"),
     ("${catalog}.${supplier_schema}.supplier", "supplier"),
 ]
+_OD = datetime.date(2024, 1, 7)
 
 
 def _scorecard_body():
+    # The REAL scorecard SQL with UC names rewritten to the fixture temp views.
+    # No dialect translation -- Spark is the target engine (datediff is native).
     raw = open(SCORECARD).read()
     body = raw[raw.index(" AS", raw.index("CREATE OR REPLACE VIEW")) + 3:].strip().rstrip(";")
     for a, b in _SUBS:
         body = body.replace(a, b)
-    # Spark datediff(end, start) -> DuckDB date subtraction (integer days)
-    body = body.replace("datediff(pol.actual_delivery_date, pol.order_date)",
-                        "(pol.actual_delivery_date - pol.order_date)")
     return body
 
 
-def _fixture():
-    duckdb = pytest.importorskip("duckdb")
-    con = duckdb.connect()
-    con.execute("CREATE TABLE supplier(supplier_sk INT, supplier_id VARCHAR, supplier_name VARCHAR, "
-                "country_code VARCHAR, current_flag BOOLEAN)")
-    con.execute("INSERT INTO supplier VALUES (1,'SUP1','Supplier 1','US',true),(2,'SUP2','Supplier 2','DE',true)")
-    con.execute("CREATE TABLE fiscal_calendar(date_key DATE, fiscal_year INT, fiscal_period INT)")
-    con.execute("INSERT INTO fiscal_calendar VALUES (DATE '2024-01-07', 2024, 1)")
-    con.execute("""CREATE TABLE purchase_order_line(supplier_sk INT, supplier_id VARCHAR, order_date DATE,
-        promised_date DATE, actual_delivery_date DATE, ordered_qty INT, received_qty INT,
-        defective_qty INT, returned_qty INT, unit_price DECIMAL(18,2), contract_price DECIMAL(18,2))""")
+def _build(spark):
+    spark.createDataFrame(
+        [(1, "SUP1", "Supplier 1", "US", True), (2, "SUP2", "Supplier 2", "DE", True)],
+        "supplier_sk int, supplier_id string, supplier_name string, country_code string, current_flag boolean",
+    ).createOrReplaceTempView("supplier")
+    spark.createDataFrame([(_OD, 2024, 1)], "date_key date, fiscal_year int, fiscal_period int") \
+         .createOrReplaceTempView("fiscal_calendar")
 
-    def line(ssk, sid, ord_off, prom_off, act_off, ordered, received, defective, unit, contract):
-        od = "DATE '2024-01-07'"
-        con.execute(f"INSERT INTO purchase_order_line VALUES ({ssk},'{sid}',{od},"
-                    f"{od} + INTERVAL {prom_off} DAY,{od} + INTERVAL {act_off} DAY,"
-                    f"{ordered},{received},{defective},0,{unit},{contract})")
+    def line(ssk, sid, prom_off, act_off, ordered, received, defective, unit, contract):
+        return (ssk, sid, _OD, _OD + datetime.timedelta(days=prom_off),
+                _OD + datetime.timedelta(days=act_off), ordered, received, defective, 0, float(unit), float(contract))
 
-    # SUP1: 4 lines -> OTIF 2/4, fill 380/400, lead {4,5,4,8}, defect 0, price all compliant
-    line(1, 'SUP1', 0, 5, 4, 100, 100, 0, 6, 6)   # on-time + in-full  -> OTIF
-    line(1, 'SUP1', 0, 5, 5, 100, 100, 0, 6, 6)   # on-time + in-full  -> OTIF
-    line(1, 'SUP1', 0, 5, 4, 100, 80, 0, 6, 6)    # on-time but SHORT  -> not OTIF
-    line(1, 'SUP1', 0, 5, 8, 100, 100, 0, 6, 6)   # LATE but in-full   -> not OTIF
-    # SUP2: 2 lines -> OTIF 0, fill 0.7, defect 20/140, late
-    line(2, 'SUP2', 0, 5, 9, 100, 70, 10, 6, 6)
-    line(2, 'SUP2', 0, 5, 9, 100, 70, 10, 6, 6)
+    rows = [
+        # SUP1: 4 lines -> OTIF 2/4, fill 380/400, lead {4,5,4,8}, defect 0, price all compliant
+        line(1, "SUP1", 5, 4, 100, 100, 0, 6, 6),   # on-time + in-full  -> OTIF
+        line(1, "SUP1", 5, 5, 100, 100, 0, 6, 6),   # on-time + in-full  -> OTIF
+        line(1, "SUP1", 5, 4, 100, 80, 0, 6, 6),    # on-time but SHORT  -> not OTIF
+        line(1, "SUP1", 5, 8, 100, 100, 0, 6, 6),   # LATE but in-full   -> not OTIF
+        # SUP2: 2 lines -> OTIF 0, fill 0.7, defect 20/140, late
+        line(2, "SUP2", 5, 9, 100, 70, 10, 6, 6),
+        line(2, "SUP2", 5, 9, 100, 70, 10, 6, 6),
+    ]
+    spark.createDataFrame(
+        rows,
+        "supplier_sk int, supplier_id string, order_date date, promised_date date, actual_delivery_date date, "
+        "ordered_qty int, received_qty int, defective_qty int, returned_qty int, unit_price double, contract_price double",
+    ).createOrReplaceTempView("purchase_order_line")
 
-    con.execute("CREATE VIEW gold_supplier_scorecard AS " + _scorecard_body())
-    return con
-
-
-def _row(con, sid):
-    return con.execute(f"""SELECT otif_pct, fill_rate, avg_lead_time_days, lead_time_variance,
-                                  defect_rate, price_compliance_pct, composite_score
-                           FROM gold_supplier_scorecard WHERE supplier_id='{sid}'""").fetchone()
+    spark.sql("CREATE OR REPLACE TEMP VIEW gold_supplier_scorecard AS " + _scorecard_body())
 
 
-def test_one_row_per_supplier_period():
-    con = _fixture()
-    n = con.execute("SELECT COUNT(*) FROM gold_supplier_scorecard").fetchone()[0]
+def _row(spark, sid):
+    return spark.sql(f"""SELECT otif_pct, fill_rate, avg_lead_time_days, lead_time_variance,
+                                defect_rate, price_compliance_pct, composite_score
+                         FROM gold_supplier_scorecard WHERE supplier_id='{sid}'""").first()
+
+
+def test_one_row_per_supplier_period(spark):
+    _build(spark)
+    n = spark.sql("SELECT COUNT(*) AS n FROM gold_supplier_scorecard").first().n
     assert n == 2, f"expected one row per supplier x fiscal period, got {n}"
 
 
-def test_kpis_and_composite_known_values():
-    con = _fixture()
-    otif, fill, lead, var, defect, price, comp = (float(x) for x in _row(con, 'SUP1'))
+def test_kpis_and_composite_known_values(spark):
+    _build(spark)
+    otif, fill, lead, var, defect, price, comp = (float(x) for x in _row(spark, 'SUP1'))
     assert otif == pytest.approx(0.5)
     assert fill == pytest.approx(0.95)
     assert lead == pytest.approx(5.25)
@@ -158,19 +160,20 @@ def test_kpis_and_composite_known_values():
     assert comp == pytest.approx(79.1)
 
 
-def test_otif_requires_both_on_time_and_in_full():
-    con = _fixture()
-    otif = float(_row(con, 'SUP1')[0])
+def test_otif_requires_both_on_time_and_in_full(spark):
+    _build(spark)
+    otif = float(_row(spark, 'SUP1')[0])
     # 4 lines: 2 fully OK, 1 on-time-but-short, 1 late-but-full.
     # Only-on-time would give 0.75; only-in-full would give 0.75; BOTH gives 0.5.
     assert otif == pytest.approx(0.5)
 
 
-def test_composite_spread_not_all_identical():
-    con = _fixture()
-    c1 = float(_row(con, 'SUP1')[6])
-    c2 = float(_row(con, 'SUP2')[6])
+def test_composite_spread_not_all_identical(spark):
+    _build(spark)
+    c1 = float(_row(spark, 'SUP1')[6])
+    c2 = float(_row(spark, 'SUP2')[6])
     assert c2 == pytest.approx(42.5)
     assert c1 != c2
-    distinct = con.execute("SELECT COUNT(DISTINCT ROUND(composite_score,4)) FROM gold_supplier_scorecard").fetchone()[0]
+    distinct = spark.sql("SELECT COUNT(DISTINCT ROUND(composite_score,4)) AS n "
+                         "FROM gold_supplier_scorecard").first().n
     assert distinct > 1

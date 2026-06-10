@@ -2,7 +2,7 @@
 
 Static contract tests keep the gold views consistent and guardrail-clean.
 Engine tests run the REAL gold SQL (gold_weekly_baseline -> gold_promo_roi_by_category
--> gold_promo_roi) against an in-process DuckDB fixture with hand-computed
+-> gold_promo_roi) on Spark (the Databricks engine) over temp-view fixtures with hand-computed
 expectations, proving the ROI math, cannibalization and forward-buy detection,
 and the divide-by-zero -> NULL path.
 """
@@ -65,7 +65,9 @@ def test_no_banned_or_hardcoded_in_gold():
     assert not bad, f"banned pattern / hardcoded id / license header in: {bad}"
 
 
-# ---------- engine: DuckDB fixture running the real ROI SQL ----------
+# ---------- engine: Spark fixture running the real ROI SQL ----------
+
+import datetime
 
 _SUBS = [
     ("${catalog}.${transaction_schema}.sales", "sales"),
@@ -76,9 +78,11 @@ _SUBS = [
     ("${catalog}.${promo_schema}.gold_promo_roi_by_category", "gold_promo_roi_by_category"),
     ("${catalog}.${promo_schema}.promotion", "promotion"),
 ]
+_BASE = datetime.date(2024, 1, 7)
 
 
 def _view_body(path):
+    # The REAL gold SQL with UC names rewritten to fixture temp views; Spark runs it verbatim.
     raw = open(path).read()
     body = raw[raw.index(" AS", raw.index("CREATE OR REPLACE VIEW")) + 3:].strip().rstrip(";")
     for a, b in _SUBS:
@@ -86,66 +90,73 @@ def _view_body(path):
     return body
 
 
-def _fixture():
-    duckdb = pytest.importorskip("duckdb")
-    con = duckdb.connect()
-    con.execute("CREATE TABLE product(product_sk INT, product_id VARCHAR, category VARCHAR, "
-                "list_price DECIMAL(18,2), unit_cost DECIMAL(18,2), current_flag BOOLEAN)")
-    con.execute("INSERT INTO product VALUES (1,'P1','bev',10,6,true),(2,'P2','bev',10,6,true),(3,'P3','snack',10,6,true)")
-    con.execute("CREATE TABLE fiscal_calendar(date_key DATE, fiscal_week_id INT, fiscal_week_index INT)")
-    for wk in range(1, 16):
-        con.execute(f"INSERT INTO fiscal_calendar VALUES (DATE '2024-01-07' + INTERVAL {(wk-1)*7} DAY, {202400+wk}, {wk})")
-    con.execute("""CREATE TABLE promotion(promo_sk INT, promo_id VARCHAR, promo_name VARCHAR, promo_type VARCHAR,
-        funding_type VARCHAR, funded_by VARCHAR, start_date DATE, end_date DATE, planned_trade_spend DECIMAL(18,2),
-        planned_lift_pct DECIMAL(6,2), fiscal_week_start INT, fiscal_week_end INT, current_flag BOOLEAN)""")
-    con.execute("INSERT INTO promotion VALUES (99,'NO_PROMO','No Promotion',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,true)")
-    con.execute("INSERT INTO promotion VALUES (1,'PR1','Promo 1','TPR','SCAN_DOWN','SHARED',"
-                "DATE '2024-03-10',DATE '2024-03-23',100,50,202410,202411,true)")
-    con.execute("INSERT INTO promotion VALUES (2,'PR2','Promo 2','FEATURE','BILL_BACK','SUPPLIER',"
-                "DATE '2024-02-04',DATE '2024-02-10',0,30,202405,202405,true)")
-    con.execute("CREATE TABLE promotion_scope(promo_sk INT, product_sk INT, store_sk INT)")
-    con.execute("INSERT INTO promotion_scope VALUES (1,1,1),(2,3,1)")
-    con.execute("CREATE TABLE sales(product_sk INT, store_sk INT, promo_id VARCHAR, date_key DATE, units INT, net_revenue DECIMAL(18,2))")
+def _wk_date(wk):
+    return _BASE + datetime.timedelta(days=(wk - 1) * 7)
+
+
+def _build(spark):
+    spark.createDataFrame(
+        [(1, "P1", "bev", 10.0, 6.0, True), (2, "P2", "bev", 10.0, 6.0, True), (3, "P3", "snack", 10.0, 6.0, True)],
+        "product_sk int, product_id string, category string, list_price double, unit_cost double, current_flag boolean",
+    ).createOrReplaceTempView("product")
+    spark.createDataFrame(
+        [(_wk_date(wk), 202400 + wk, wk) for wk in range(1, 16)],
+        "date_key date, fiscal_week_id int, fiscal_week_index int",
+    ).createOrReplaceTempView("fiscal_calendar")
+    spark.createDataFrame(
+        [(99, "NO_PROMO", "No Promotion", None, None, None, None, None, None, None, None, None, True),
+         (1, "PR1", "Promo 1", "TPR", "SCAN_DOWN", "SHARED",
+          datetime.date(2024, 3, 10), datetime.date(2024, 3, 23), 100.0, 50.0, 202410, 202411, True),
+         (2, "PR2", "Promo 2", "FEATURE", "BILL_BACK", "SUPPLIER",
+          datetime.date(2024, 2, 4), datetime.date(2024, 2, 10), 0.0, 30.0, 202405, 202405, True)],
+        "promo_sk int, promo_id string, promo_name string, promo_type string, funding_type string, "
+        "funded_by string, start_date date, end_date date, planned_trade_spend double, planned_lift_pct double, "
+        "fiscal_week_start int, fiscal_week_end int, current_flag boolean",
+    ).createOrReplaceTempView("promotion")
+    spark.createDataFrame([(1, 1, 1), (2, 3, 1)], "promo_sk int, product_sk int, store_sk int") \
+         .createOrReplaceTempView("promotion_scope")
+
+    sales = []
 
     def ins(product_sk, wk, promo_id, units, net):
-        d = f"DATE '2024-01-07' + INTERVAL {(wk-1)*7} DAY"
-        con.execute(f"INSERT INTO sales VALUES ({product_sk},1,'{promo_id}',{d},{units},{net})")
+        sales.append((product_sk, 1, promo_id, _wk_date(wk), units, float(net)))
 
     for wk in range(1, 16):
         # P1: normal, then promoted weeks 10-11, then forward-buy dip 12-13, then normal
         if wk in (10, 11):
-            ins(1, wk, 'PR1', 15, 135)          # promoted (10% off): 15 units, net 135
+            ins(1, wk, "PR1", 15, 135)          # promoted (10% off): 15 units, net 135
         elif wk in (12, 13):
-            ins(1, wk, 'NO_PROMO', 4, 40)        # forward-buy dip below baseline (~10)
+            ins(1, wk, "NO_PROMO", 4, 40)        # forward-buy dip below baseline (~10)
         else:
-            ins(1, wk, 'NO_PROMO', 10, 100)
+            ins(1, wk, "NO_PROMO", 10, 100)
         # P2: substitute (bev), cannibalized during PR1 window 10-11
         if wk in (10, 11):
-            ins(2, wk, 'NO_PROMO', 5, 50)        # cannibalization dip below baseline
+            ins(2, wk, "NO_PROMO", 5, 50)        # cannibalization dip below baseline
         else:
-            ins(2, wk, 'NO_PROMO', 10, 100)
+            ins(2, wk, "NO_PROMO", 10, 100)
         # P3: promoted by PR2 (zero trade spend) week 5
         if wk == 5:
-            ins(3, wk, 'PR2', 12, 108)
+            ins(3, wk, "PR2", 12, 108)
         else:
-            ins(3, wk, 'NO_PROMO', 10, 100)
+            ins(3, wk, "NO_PROMO", 10, 100)
+    spark.createDataFrame(
+        sales, "product_sk int, store_sk int, promo_id string, date_key date, units int, net_revenue double"
+    ).createOrReplaceTempView("sales")
 
-    con.execute("CREATE VIEW gold_weekly_baseline AS " + _view_body(WB))
-    con.execute("CREATE VIEW gold_promo_roi_by_category AS " + _view_body(BYCAT))
-    con.execute("CREATE VIEW gold_promo_roi AS " + _view_body(ROI))
-    return con
+    spark.sql("CREATE OR REPLACE TEMP VIEW gold_weekly_baseline AS " + _view_body(WB))
+    spark.sql("CREATE OR REPLACE TEMP VIEW gold_promo_roi_by_category AS " + _view_body(BYCAT))
+    spark.sql("CREATE OR REPLACE TEMP VIEW gold_promo_roi AS " + _view_body(ROI))
 
 
-def test_roi_returns_rows():
-    con = _fixture()
-    n = con.execute("SELECT COUNT(*) FROM gold_promo_roi").fetchone()[0]
+def test_roi_returns_rows(spark):
+    _build(spark)
+    n = spark.sql("SELECT COUNT(*) AS n FROM gold_promo_roi").first().n
     assert n == 2, f"expected PR1 and PR2, got {n}"
 
 
-def test_roi_math_known_values():
-    con = _fixture()
-    row = con.execute("""SELECT incremental_margin, trade_spend, roi
-                         FROM gold_promo_roi WHERE promo_id='PR1'""").fetchone()
+def test_roi_math_known_values(spark):
+    _build(spark)
+    row = spark.sql("SELECT incremental_margin, trade_spend, roi FROM gold_promo_roi WHERE promo_id='PR1'").first()
     inc_margin, spend, roi = (float(x) for x in row)
     # promoted_margin = 2*(135 - 15*6) = 90 ; baseline_margin = 20 units * (10-6) = 80
     assert inc_margin == pytest.approx(10.0), inc_margin
@@ -153,34 +164,34 @@ def test_roi_math_known_values():
     assert roi == pytest.approx(0.10), roi          # 10 / 100
 
 
-def test_cannibalization_detected():
-    con = _fixture()
-    cu, cm = con.execute("""SELECT cannibalization_units, cannibalization_margin
-                            FROM gold_promo_roi WHERE promo_id='PR1'""").fetchone()
+def test_cannibalization_detected(spark):
+    _build(spark)
+    cu, cm = spark.sql("SELECT cannibalization_units, cannibalization_margin "
+                       "FROM gold_promo_roi WHERE promo_id='PR1'").first()
     # P2 dip: wk10 (10-5)=5, wk11 (9.375-5)=4.375 -> 9.375 units ; margin 9.375*4 = 37.5
     assert float(cu) == pytest.approx(9.375), cu
     assert float(cm) == pytest.approx(37.5), cm
 
 
-def test_forward_buy_detected():
-    con = _fixture()
-    fu, fm = con.execute("""SELECT forward_buy_units, forward_buy_margin
-                            FROM gold_promo_roi WHERE promo_id='PR1'""").fetchone()
+def test_forward_buy_detected(spark):
+    _build(spark)
+    fu, fm = spark.sql("SELECT forward_buy_units, forward_buy_margin "
+                       "FROM gold_promo_roi WHERE promo_id='PR1'").first()
     # P1 post weeks 12,13: (10-4)=6 + (9-4)=5 -> 11 units ; margin 11*4 = 44
     assert float(fu) == pytest.approx(11.0), fu
     assert float(fm) == pytest.approx(44.0), fm
 
 
-def test_net_incremental_margin_goes_negative():
-    con = _fixture()
-    net = con.execute("SELECT net_incremental_margin FROM gold_promo_roi WHERE promo_id='PR1'").fetchone()[0]
+def test_net_incremental_margin_goes_negative(spark):
+    _build(spark)
+    net = spark.sql("SELECT net_incremental_margin FROM gold_promo_roi WHERE promo_id='PR1'").first()[0]
     # 10 (incremental) - 37.5 (cannib) - 44 (forward buy) = -71.5
     assert float(net) == pytest.approx(-71.5), net
-    any_neg = con.execute("SELECT COUNT(*) FROM gold_promo_roi WHERE net_incremental_margin < 0").fetchone()[0]
+    any_neg = spark.sql("SELECT COUNT(*) AS n FROM gold_promo_roi WHERE net_incremental_margin < 0").first().n
     assert any_neg >= 1
 
 
-def test_divide_by_zero_returns_null():
-    con = _fixture()
-    roi = con.execute("SELECT roi FROM gold_promo_roi WHERE promo_id='PR2'").fetchone()[0]
+def test_divide_by_zero_returns_null(spark):
+    _build(spark)
+    roi = spark.sql("SELECT roi FROM gold_promo_roi WHERE promo_id='PR2'").first()[0]
     assert roi is None, f"zero trade spend must yield NULL roi, got {roi}"

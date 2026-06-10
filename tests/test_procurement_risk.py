@@ -1,6 +1,6 @@
 """Tests for Procurement Risk Detection (gold_procurement_risk).
 
-Static contract tests + a DuckDB fixture running the REAL view to prove the
+Static contract tests + a Spark fixture (the Databricks engine) running the REAL view to prove the
 multi-factor logic: a deteriorating-but-currently-OK supplier surfaces via
 trend (independent of its current score), a sole-source supplier is flagged
 (and escalated to HIGH even with a low blended score), HHI math is correct,
@@ -39,7 +39,7 @@ def test_no_banned_or_hardcoded():
     assert not re.search(r"https?://[\w.-]*databricks|retail_mvm|retail_ecm|Copyright|SPDX|Licensed under", txt, re.I)
 
 
-# ---------- engine: DuckDB fixture running the real view ----------
+# ---------- engine: Spark fixture running the real view ----------
 
 _SUBS = [
     ("${catalog}.${risk_schema}.gold_supplier_scorecard", "gold_supplier_scorecard"),
@@ -50,6 +50,7 @@ _SUBS = [
 
 
 def _view_body():
+    # The REAL gold SQL with UC names rewritten to fixture temp views; Spark runs it verbatim.
     raw = open(RISK).read()
     body = raw[raw.index(" AS", raw.index("CREATE OR REPLACE VIEW")) + 3:].strip().rstrip(";")
     for a, b in _SUBS:
@@ -57,49 +58,47 @@ def _view_body():
     return body
 
 
-def _fixture():
-    duckdb = pytest.importorskip("duckdb")
-    con = duckdb.connect()
-    con.execute("CREATE TABLE supplier(supplier_sk INT, supplier_id VARCHAR, supplier_name VARCHAR, "
-                "country_code VARCHAR, current_flag BOOLEAN)")
-    con.execute("INSERT INTO supplier VALUES (1,'S1','S1','US',true),(2,'S2','S2','DE',true),(3,'S3','S3','US',true)")
-    con.execute("CREATE TABLE product(product_sk INT, product_id VARCHAR, category VARCHAR, current_flag BOOLEAN)")
-    con.execute("INSERT INTO product VALUES (1,'PA','bev',true),(3,'EX1','snack',true),(4,'PC','snack',true)")
+def _build(spark):
+    spark.createDataFrame(
+        [(1, "S1", "S1", "US", True), (2, "S2", "S2", "DE", True), (3, "S3", "S3", "US", True)],
+        "supplier_sk int, supplier_id string, supplier_name string, country_code string, current_flag boolean",
+    ).createOrReplaceTempView("supplier")
+    spark.createDataFrame(
+        [(1, "PA", "bev", True), (3, "EX1", "snack", True), (4, "PC", "snack", True)],
+        "product_sk int, product_id string, category string, current_flag boolean",
+    ).createOrReplaceTempView("product")
     # scorecard history: S1 declines (98,95,92,85 -> current 70); S2/S3 single current period
-    con.execute("CREATE TABLE gold_supplier_scorecard(supplier_sk INT, supplier_id VARCHAR, "
-                "fiscal_year INT, fiscal_period INT, composite_score DOUBLE)")
-    for fp, cs in [(1, 98), (2, 95), (3, 92), (4, 85), (5, 70)]:
-        con.execute(f"INSERT INTO gold_supplier_scorecard VALUES (1,'S1',2024,{fp},{cs})")
-    con.execute("INSERT INTO gold_supplier_scorecard VALUES (2,'S2',2024,5,95)")
-    con.execute("INSERT INTO gold_supplier_scorecard VALUES (3,'S3',2024,5,90)")
+    sc = [(1, "S1", 2024, fp, float(cs)) for fp, cs in [(1, 98), (2, 95), (3, 92), (4, 85), (5, 70)]]
+    sc += [(2, "S2", 2024, 5, 95.0), (3, "S3", 2024, 5, 90.0)]
+    spark.createDataFrame(
+        sc, "supplier_sk int, supplier_id string, fiscal_year int, fiscal_period int, composite_score double"
+    ).createOrReplaceTempView("gold_supplier_scorecard")
     # spend (received_qty x unit_price); unit_price=1 so received_qty = spend
-    con.execute("CREATE TABLE purchase_order_line(supplier_id VARCHAR, product_id VARCHAR, product_sk INT, "
-                "received_qty INT, unit_price DECIMAL(18,2))")
-    con.executemany("INSERT INTO purchase_order_line VALUES (?,?,?,?,1)", [
-        ('S1', 'PA', 1, 400),    # bev: S1 400
-        ('S3', 'PA', 1, 600),    # bev: S3 600 (PA multi-sourced)
-        ('S2', 'EX1', 3, 500),   # snack: EX1 SOLE-sourced by S2
-        ('S3', 'PC', 4, 150),    # snack: S3
-        ('S1', 'PC', 4, 50),     # snack: S1 (PC multi-sourced)
-    ])
-    con.execute("CREATE VIEW gold_procurement_risk AS " + _view_body())
-    return con
+    pol = [("S1", "PA", 1, 400, 1.0),    # bev: S1 400
+           ("S3", "PA", 1, 600, 1.0),    # bev: S3 600 (PA multi-sourced)
+           ("S2", "EX1", 3, 500, 1.0),   # snack: EX1 SOLE-sourced by S2
+           ("S3", "PC", 4, 150, 1.0),    # snack: S3
+           ("S1", "PC", 4, 50, 1.0)]     # snack: S1 (PC multi-sourced)
+    spark.createDataFrame(
+        pol, "supplier_id string, product_id string, product_sk int, received_qty int, unit_price double"
+    ).createOrReplaceTempView("purchase_order_line")
+    spark.sql("CREATE OR REPLACE TEMP VIEW gold_procurement_risk AS " + _view_body())
 
 
-def _row(con, sid):
+def _row(spark, sid):
     cols = ("performance_risk,trend_risk,concentration_risk,concentration_hhi,single_source_flag,"
             "single_sourced_sku_count,risk_score,risk_tier,top_risk_factors")
-    return con.execute(f"SELECT {cols} FROM gold_procurement_risk WHERE supplier_id='{sid}'").fetchone()
+    return spark.sql(f"SELECT {cols} FROM gold_procurement_risk WHERE supplier_id='{sid}'").first()
 
 
-def test_returns_one_row_per_supplier():
-    con = _fixture()
-    assert con.execute("SELECT COUNT(*) FROM gold_procurement_risk").fetchone()[0] == 3
+def test_returns_one_row_per_supplier(spark):
+    _build(spark)
+    assert spark.sql("SELECT COUNT(*) AS n FROM gold_procurement_risk").first().n == 3
 
 
-def test_trend_risk_surfaces_declining_supplier():
-    con = _fixture()
-    perf, trend, conc, hhi, ss_flag, ss_cnt, score, tier, factors = _row(con, 'S1')
+def test_trend_risk_surfaces_declining_supplier(spark):
+    _build(spark)
+    perf, trend, conc, hhi, ss_flag, ss_cnt, score, tier, factors = _row(spark, 'S1')
     # current composite 70 (OK -> perf_risk 30); trailing mean 92.5 -> delta -22.5 -> trend_risk 75
     assert float(trend) == pytest.approx(75.0)
     assert float(perf) == pytest.approx(30.0)        # current score is NOT the dominant driver
@@ -108,9 +107,9 @@ def test_trend_risk_surfaces_declining_supplier():
     assert not ss_flag                                # NOT driven by single-source
 
 
-def test_single_source_flagged_and_escalates():
-    con = _fixture()
-    perf, trend, conc, hhi, ss_flag, ss_cnt, score, tier, factors = _row(con, 'S2')
+def test_single_source_flagged_and_escalates(spark):
+    _build(spark)
+    perf, trend, conc, hhi, ss_flag, ss_cnt, score, tier, factors = _row(spark, 'S2')
     assert ss_flag is True
     assert ss_cnt == 1
     assert tier == "HIGH"
@@ -118,25 +117,25 @@ def test_single_source_flagged_and_escalates():
     assert "single_source" in factors
 
 
-def test_hhi_math():
-    con = _fixture()
+def test_hhi_math(spark):
+    _build(spark)
     # snack HHI = (500^2 + 150^2 + 50^2) / 700^2 = 0.561224 ; S2 only serves snack
-    hhi_s2 = float(_row(con, 'S2')[3])
+    hhi_s2 = float(_row(spark, 'S2')[3])
     assert hhi_s2 == pytest.approx(0.561224, abs=1e-5)
     # bev HHI = (400^2 + 600^2)/1000^2 = 0.52 ; S1 weighted across bev(400)+snack(50)
-    hhi_s1 = float(_row(con, 'S1')[3])
+    hhi_s1 = float(_row(spark, 'S1')[3])
     expected_s1 = (400 * 0.52 + 50 * 0.561224) / 450
     assert hhi_s1 == pytest.approx(expected_s1, abs=1e-5)
 
 
-def test_single_source_only_where_sole():
-    con = _fixture()
-    assert _row(con, 'S1')[4] is False    # S1 sources only multi-sourced SKUs
-    assert _row(con, 'S2')[4] is True     # S2 sole-sources EX1
+def test_single_source_only_where_sole(spark):
+    _build(spark)
+    assert _row(spark, 'S1')[4] is False    # S1 sources only multi-sourced SKUs
+    assert _row(spark, 'S2')[4] is True     # S2 sole-sources EX1
 
 
-def test_hhi_in_unit_range_all_rows():
-    con = _fixture()
-    bad = con.execute("SELECT COUNT(*) FROM gold_procurement_risk "
-                      "WHERE concentration_hhi < 0 OR concentration_hhi > 1").fetchone()[0]
+def test_hhi_in_unit_range_all_rows(spark):
+    _build(spark)
+    bad = spark.sql("SELECT COUNT(*) AS n FROM gold_procurement_risk "
+                    "WHERE concentration_hhi < 0 OR concentration_hhi > 1").first().n
     assert bad == 0

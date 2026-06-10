@@ -28,3 +28,9 @@ ALTER TABLE ${catalog}.${procurement_schema}.purchase_order_line
 --   purchase_order_line.order_date -> fiscal_calendar.date_key
 -- Join on order_date for the fiscal period (NRF 4-5-4).
 -- ------------------------------------------------------------
+
+-- ENFORCED Delta CHECK constraints (always-on; complement the post-hoc DQ checks).
+ALTER TABLE ${catalog}.${procurement_schema}.purchase_order_line
+  ADD CONSTRAINT chk_pol_quantities
+  CHECK (ordered_qty >= 0 AND received_qty >= 0 AND defective_qty >= 0
+         AND received_qty <= ordered_qty);

@@ -23,6 +23,7 @@ import glob
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 from pyspark.sql import SparkSession
 
@@ -86,29 +87,45 @@ def discover(filter_set=None):
         yield label, path
 
 
-def run(spark, catalog, filter_set=None, fail_on="error", schema_overrides=None):
+def _run_one(spark, label, name, severity, query):
+    """Execute one check. error/warn checks are COUNT(*)-wrapped so the violation
+    count is computed in-engine and NO rows are shipped to the driver; metric
+    checks return their scalar value. Returns (label, name, severity, status, value)."""
+    try:
+        if severity == "metric":
+            row = spark.sql(query).first()
+            return (label, name, severity, "METRIC", row[0] if row is not None else None)
+        violations = spark.sql(f"SELECT COUNT(*) AS n FROM (\n{query}\n) ordm_chk").first()["n"]
+        status = "PASS" if violations == 0 else ("FAIL" if severity == "error" else "WARN")
+        return (label, name, severity, status, violations)
+    except Exception as exc:  # a malformed / under-deployed check is itself a failure
+        return (label, name, severity, "ERROR", str(exc))
+
+
+def run(spark, catalog, filter_set=None, fail_on="error", schema_overrides=None, max_parallel=8):
     if not catalog:
         raise ValueError("`catalog` parameter is required (guardrail #1: no hardcoded catalog).")
     schema_overrides = schema_overrides or {}
 
-    results = []
+    # Collect every check, then run them CONCURRENTLY against the one Spark
+    # session -- Spark submits the jobs from multiple threads, so the checks
+    # overlap instead of running as ~100 strictly-sequential jobs.
+    checks = []
     for label, path in discover(filter_set):
         text = resolve(open(path).read(), catalog, schema_overrides)
         for name, severity, query in parse_checks(text):
-            try:
-                if severity == "metric":
-                    row = spark.sql(query).first()
-                    value = row[0] if row is not None else None
-                    results.append((label, name, severity, "METRIC", value))
-                    print(f"  [{label}] {name:42} METRIC value={value}")
-                    continue
-                violations = spark.sql(query).count()
-                status = "PASS" if violations == 0 else ("FAIL" if severity == "error" else "WARN")
-            except Exception as exc:  # a malformed/under-deployed check is itself a failure
-                violations, status = -1, "ERROR"
-                print(f"  [{label}] {name}: query error: {exc}")
-            results.append((label, name, severity, status, violations))
-            print(f"  [{label}] {name:42} {status:5} violations={violations}")
+            checks.append((label, name, severity, query))
+
+    with ThreadPoolExecutor(max_workers=max(1, max_parallel)) as pool:
+        results = list(pool.map(lambda c: _run_one(spark, *c), checks))
+
+    for label, name, severity, status, value in sorted(results, key=lambda r: (r[0], r[1])):
+        if status == "METRIC":
+            print(f"  [{label}] {name:42} METRIC value={value}")
+        elif status == "ERROR":
+            print(f"  [{label}] {name:42} ERROR  {value}")
+        else:
+            print(f"  [{label}] {name:42} {status:5} violations={value}")
 
     failed = [r for r in results
               if r[3] in ("ERROR", "FAIL")
@@ -130,7 +147,8 @@ def main():
     filter_set = [d.strip() for d in domains.split(",") if d.strip()] or None
     overrides = {k: get_param(k, "") for k in schema_defaults()}
     overrides = {k: v for k, v in overrides.items() if v}
-    run(spark, catalog, filter_set, fail_on, overrides)
+    max_parallel = int(get_param("max_parallel", "8"))
+    run(spark, catalog, filter_set, fail_on, overrides, max_parallel)
 
 
 if __name__ == "__main__":

@@ -29,3 +29,8 @@ ALTER TABLE ${catalog}.${transaction_schema}.sales
 --   sales.date_key -> fiscal_calendar.date_key  (calendar PK is calendar_sk)
 -- Join sales to the fiscal calendar on date_key for all retail-week logic.
 -- ------------------------------------------------------------
+
+-- ENFORCED Delta CHECK constraints (always-on; complement the post-hoc DQ checks).
+ALTER TABLE ${catalog}.${transaction_schema}.sales
+  ADD CONSTRAINT chk_sales_nonnegative
+  CHECK (units >= 0 AND gross_revenue >= 0 AND net_revenue >= 0);

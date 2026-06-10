@@ -13,6 +13,7 @@ This is a **data domain** (→ a Unity Catalog schema). One file per table keeps
 | `tables/<table>.sql` | One CREATE TABLE file per entity (e.g. `tables/profile.sql`) |
 | `relationships.sql` | Cross-table foreign keys for this domain |
 | `checks.sql` | Data-quality assertions for this domain (run by `data-quality/run_checks.py`) |
+| `masks.sql` | Unity Catalog column masks enforcing the `dbx_pii_*` tags (PII masked except for the `pii_readers` group) |
 | `glossary.md` | Business terms for this domain |
 | `samples/` | Small synthetic sample rows |
 

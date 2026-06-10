@@ -30,3 +30,12 @@ ALTER TABLE ${catalog}.${promo_schema}.promotion_scope
 --   promotion.fiscal_week_end   -> fiscal_calendar.fiscal_week_id
 -- (fiscal_calendar PK is calendar_sk; fiscal_week_id is a week-level key.)
 -- ------------------------------------------------------------
+
+-- ENFORCED Delta CHECK constraints (always-on; complement the post-hoc DQ checks).
+ALTER TABLE ${catalog}.${promo_schema}.promotion
+  ADD CONSTRAINT chk_promotion_supplier_share
+  CHECK (supplier_share_pct IS NULL OR (supplier_share_pct >= 0 AND supplier_share_pct <= 100));
+
+ALTER TABLE ${catalog}.${promo_schema}.promotion
+  ADD CONSTRAINT chk_promotion_spend_nonnegative
+  CHECK (planned_trade_spend IS NULL OR planned_trade_spend >= 0);

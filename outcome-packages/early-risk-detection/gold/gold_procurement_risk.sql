@@ -9,7 +9,8 @@
 -- ============================================================
 -- A procurement risk register: one row per supplier (current fiscal period),
 -- with the contributing factors as columns so the register explains itself.
--- Built on gold_supplier_scorecard plus sourcing/spend from the PO-line fact.
+-- Built on gold_supplier_scorecard (a MATERIALIZED VIEW) plus sourcing/spend
+-- from the PO-line fact.
 --
 -- Factors (each 0-100, higher = riskier; missing inputs default to 0):
 --   performance_risk    = 100 - current composite_score (inverse of the scorecard).

@@ -14,7 +14,7 @@ import pytest
 import sqlglot
 import sqlglot.expressions as E
 
-from tools.ordm_config import resolve
+from tools.ordm_config import resolve, view_select_body
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 GOLD = os.path.join(REPO, "outcome-packages", "promote-with-purpose", "gold")
@@ -29,17 +29,16 @@ PRODUCT_DDL = os.path.join(REPO, "canonical-core", "product", "tables", "product
 
 @pytest.mark.parametrize("path", [WB, BYCAT, ROI, PERF])
 def test_view_parses(path):
-    raw = resolve(open(path).read(), "c")
-    create = next((s for s in sqlglot.parse(raw, read="databricks", error_level="ignore")
-                   if isinstance(s, E.Create)), None)
-    assert create is not None, f"{os.path.basename(path)} did not parse as CREATE VIEW"
+    # Parse the SELECT body (form-agnostic: views and materialized views alike).
+    sel = sqlglot.parse_one(view_select_body(resolve(open(path).read(), "c")),
+                            read="databricks", error_level="ignore")
+    assert sel is not None and sel.named_selects, f"{os.path.basename(path)} did not parse"
 
 
 def test_roi_view_exposes_required_columns():
-    raw = resolve(open(ROI).read(), "c")
-    create = next(s for s in sqlglot.parse(raw, read="databricks", error_level="ignore")
-                  if isinstance(s, E.Create))
-    outputs = set(create.expression.named_selects)
+    sel = sqlglot.parse_one(view_select_body(resolve(open(ROI).read(), "c")),
+                            read="databricks", error_level="ignore")
+    outputs = set(sel.named_selects)
     required = {"promo_id", "baseline_units", "baseline_revenue", "baseline_margin",
                 "incremental_units", "incremental_revenue", "incremental_margin",
                 "trade_spend", "roi", "planned_lift_pct", "realized_lift_pct",
@@ -82,9 +81,9 @@ _BASE = datetime.date(2024, 1, 7)
 
 
 def _view_body(path):
-    # The REAL gold SQL with UC names rewritten to fixture temp views; Spark runs it verbatim.
-    raw = open(path).read()
-    body = raw[raw.index(" AS", raw.index("CREATE OR REPLACE VIEW")) + 3:].strip().rstrip(";")
+    # The REAL gold SQL with UC names rewritten to fixture temp views; Spark runs it
+    # verbatim. view_select_body handles both plain and materialized view headers.
+    body = view_select_body(open(path).read())
     for a, b in _SUBS:
         body = body.replace(a, b)
     return body

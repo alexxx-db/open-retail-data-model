@@ -1,7 +1,10 @@
 -- ============================================================
 -- ORDM · Outcome Package · Promote with Purpose
--- View: gold_promo_roi_by_category   (drill grain of gold_promo_roi)
+-- View: gold_promo_roi_by_category   (MATERIALIZED VIEW; drill grain of gold_promo_roi)
 -- Layer: outcome package (gold / consumable)
+-- Materialization: Lakeflow Declarative Pipeline materialized view (reads the
+--   materialized gold_weekly_baseline). gold_promo_roi and gold_category_growth
+--   read this MATERIALIZED table, so the decomposition runs once per refresh.
 -- Version: v1_mvm
 -- Generated: 2026-06-09
 -- LLM-generated: true (maintainer-reviewed before release)
@@ -31,7 +34,7 @@
 --                            - forward_buy_margin.
 -- ============================================================
 
-CREATE OR REPLACE VIEW ${catalog}.${promo_schema}.gold_promo_roi_by_category AS
+CREATE OR REFRESH MATERIALIZED VIEW ${catalog}.${promo_schema}.gold_promo_roi_by_category AS
 WITH params AS (
   SELECT 2 AS forward_buy_weeks
 ),

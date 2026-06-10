@@ -1,7 +1,10 @@
 -- ============================================================
 -- ORDM · Outcome Package · Early Risk Detection
--- View: gold_supplier_scorecard
+-- View: gold_supplier_scorecard   (MATERIALIZED VIEW)
 -- Layer: outcome package (gold / consumable)
+-- Materialization: Lakeflow Declarative Pipeline materialized view, refreshed on
+--   the fiscal-period cadence. gold_procurement_risk and gold_category_growth
+--   read the MATERIALIZED table, so the KPI aggregation runs once per refresh.
 -- Version: v1_mvm
 -- Generated: 2026-06-09
 -- LLM-generated: true (maintainer-reviewed before release)
@@ -33,7 +36,7 @@
 -- DQ metric, not a failure).
 -- ============================================================
 
-CREATE OR REPLACE VIEW ${catalog}.${risk_schema}.gold_supplier_scorecard AS
+CREATE OR REFRESH MATERIALIZED VIEW ${catalog}.${risk_schema}.gold_supplier_scorecard AS
 WITH w AS (
   -- Composite weights (sum to 100) and normalization caps. Single, visible home.
   SELECT

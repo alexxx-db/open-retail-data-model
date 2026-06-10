@@ -10,8 +10,9 @@
 -- Category growth, one row per category x fiscal period (NRF 4-5-4). Phase-0
 -- decision: INTERPRETATION A (collaborative) -- growth analysed WITH and
 -- attributed TO suppliers, integrating the promo-ROI, customer-LTV and
--- supplier scorecards. Upstream signals are LEFT JOINed, so the view returns
--- rows (and NULLs those columns) if an upstream view yields nothing.
+-- supplier scorecards (each a MATERIALIZED VIEW, so this view reads precomputed
+-- tables, not the recomputed DAG). Upstream signals are LEFT JOINed, so the view
+-- returns rows (and NULLs those columns) if an upstream view yields nothing.
 --
 -- Revenue base = POS `sales` x product x fiscal calendar (scanned once, reused).
 --
@@ -70,7 +71,9 @@ cat AS (
     SUM(net_revenue) AS revenue,
     SUM(units)       AS units,
     SUM(line_margin) AS margin,
-    COUNT(DISTINCT CONCAT(CAST(product_sk AS STRING), '-', CAST(store_sk AS STRING))) AS dist_points
+    -- distribution = number of active product x store selling points. approx_count_distinct
+    -- (HyperLogLog) avoids an exact-distinct shuffle on the sales fact at scale.
+    approx_count_distinct(CONCAT(CAST(product_sk AS STRING), '-', CAST(store_sk AS STRING))) AS dist_points
   FROM base
   GROUP BY category, fiscal_year, fiscal_period, period_index
 ),

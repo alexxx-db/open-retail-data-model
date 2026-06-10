@@ -15,7 +15,7 @@ import pytest
 import sqlglot
 import sqlglot.expressions as E
 
-from tools.ordm_config import resolve
+from tools.ordm_config import resolve, view_select_body
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 GENERATOR = os.path.join(REPO, "synthetic-data", "generators", "supplier_monitoring.py")
@@ -53,10 +53,10 @@ def test_generator_columns_match_ddl(table):
 
 
 def test_scorecard_exposes_required_columns():
-    raw = resolve(open(SCORECARD).read(), "c")
-    create = next(s for s in sqlglot.parse(raw, read="databricks", error_level="ignore")
-                  if isinstance(s, E.Create))
-    outputs = set(create.expression.named_selects)
+    # Parse the SELECT body (form-agnostic: gold_supplier_scorecard is a materialized view).
+    sel = sqlglot.parse_one(view_select_body(resolve(open(SCORECARD).read(), "c")),
+                            read="databricks", error_level="ignore")
+    outputs = set(sel.named_selects)
     required = {"supplier_id", "fiscal_year", "fiscal_period", "order_lines", "otif_pct",
                 "fill_rate", "avg_lead_time_days", "lead_time_variance", "defect_rate",
                 "price_compliance_pct", "composite_score"}
@@ -97,8 +97,8 @@ _OD = datetime.date(2024, 1, 7)
 def _scorecard_body():
     # The REAL scorecard SQL with UC names rewritten to the fixture temp views.
     # No dialect translation -- Spark is the target engine (datediff is native).
-    raw = open(SCORECARD).read()
-    body = raw[raw.index(" AS", raw.index("CREATE OR REPLACE VIEW")) + 3:].strip().rstrip(";")
+    # view_select_body handles the materialized-view header.
+    body = view_select_body(open(SCORECARD).read())
     for a, b in _SUBS:
         body = body.replace(a, b)
     return body

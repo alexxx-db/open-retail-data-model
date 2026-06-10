@@ -14,7 +14,7 @@ import pytest
 import sqlglot
 import sqlglot.expressions as E
 
-from tools.ordm_config import resolve
+from tools.ordm_config import resolve, view_select_body
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DDL = os.path.join(REPO, "canonical-core", "order", "tables", "customer_order_line.sql")
@@ -26,10 +26,10 @@ PII_COLUMNS = {"loyalty_id", "household_id", "first_name", "middle_name", "last_
 
 
 def _outputs():
-    raw = resolve(open(LTV).read(), "c")
-    create = next(s for s in sqlglot.parse(raw, read="databricks", error_level="ignore")
-                  if isinstance(s, E.Create))
-    return set(create.expression.named_selects)
+    # Parse the SELECT body (form-agnostic: gold_customer_ltv is a materialized view).
+    sel = sqlglot.parse_one(view_select_body(resolve(open(LTV).read(), "c")),
+                            read="databricks", error_level="ignore")
+    return set(sel.named_selects)
 
 
 # ---------- static ----------
@@ -78,9 +78,9 @@ _ORDER_SCHEMA = ("profile_sk int, profile_id string, order_id string, product_sk
 
 
 def _view_body():
-    # The REAL gold SQL with UC names rewritten to fixture temp views; Spark runs it verbatim.
-    raw = open(LTV).read()
-    body = raw[raw.index(" AS", raw.index("CREATE OR REPLACE VIEW")) + 3:].strip().rstrip(";")
+    # The REAL gold SQL with UC names rewritten to fixture temp views; Spark runs it
+    # verbatim. view_select_body handles the materialized-view header.
+    body = view_select_body(open(LTV).read())
     for a, b in _SUBS:
         body = body.replace(a, b)
     return body

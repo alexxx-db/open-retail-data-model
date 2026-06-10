@@ -1,7 +1,11 @@
 -- ============================================================
 -- ORDM · Outcome Package · Promote with Purpose
--- View: gold_weekly_baseline
+-- View: gold_weekly_baseline   (MATERIALIZED VIEW)
 -- Layer: outcome package (gold / reusable building block)
+-- Materialization: Lakeflow Declarative Pipeline materialized view, refreshed
+--   on the fiscal-period cadence by the pipeline schedule. Downstream gold
+--   views (gold_promo_roi_by_category, gold_promo_roi) read the MATERIALIZED
+--   table, so the trailing-baseline scan runs once per refresh, not per query.
 -- Version: v1_mvm
 -- Generated: 2026-06-09
 -- LLM-generated: true (maintainer-reviewed before release)
@@ -17,7 +21,7 @@
 -- are available. Identical definition to gold_trade_promotion's baseline.
 -- ============================================================
 
-CREATE OR REPLACE VIEW ${catalog}.${promo_schema}.gold_weekly_baseline AS
+CREATE OR REFRESH MATERIALIZED VIEW ${catalog}.${promo_schema}.gold_weekly_baseline AS
 WITH weekly AS (
   SELECT
     s.product_sk,

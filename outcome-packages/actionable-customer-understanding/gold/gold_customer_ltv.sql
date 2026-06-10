@@ -1,7 +1,11 @@
 -- ============================================================
 -- ORDM · Outcome Package · Actionable Customer Understanding
--- View: gold_customer_ltv
+-- View: gold_customer_ltv   (MATERIALIZED VIEW)
 -- Layer: outcome package (gold / consumable)
+-- Materialization: Lakeflow Declarative Pipeline materialized view, refreshed on
+--   the fiscal-period cadence. The population-wide RFM/value-tier NTILEs are
+--   computed once per refresh; consumers (e.g. gold_category_growth, promo
+--   targeting) read the MATERIALIZED table.
 -- Version: v1_mvm
 -- Generated: 2026-06-09
 -- LLM-generated: true (maintainer-reviewed before release)
@@ -39,7 +43,7 @@
 --                       own average cadence (tenure_periods / frequency).
 -- ============================================================
 
-CREATE OR REPLACE VIEW ${catalog}.${acu_schema}.gold_customer_ltv AS
+CREATE OR REFRESH MATERIALIZED VIEW ${catalog}.${acu_schema}.gold_customer_ltv AS
 WITH params AS (
   SELECT 12 AS horizon_cap, 2.0 AS churn_mult
 ),

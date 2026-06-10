@@ -11,7 +11,7 @@
 -- units / revenue / margin over baseline, ROI on trade spend, realized vs
 -- planned lift, and the two value-killers (cannibalization, forward buy).
 --
--- This is a clean roll-up of gold_promo_roi_by_category (the promo x category
+-- This is a clean roll-up of gold_promo_roi_by_category (a MATERIALIZED VIEW; the promo x category
 -- drill) — all measures are additive across categories; ROI and realized lift
 -- are recomputed from the summed components. trade_spend allocations sum back
 -- to the promotion's planned_trade_spend. incremental_* and

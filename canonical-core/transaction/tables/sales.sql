@@ -45,5 +45,10 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${transaction_schema}.sales (
   CONSTRAINT pk_sales PRIMARY KEY (sales_sk)
 )
 USING DELTA
-CLUSTER BY (product_sk, store_sk, promo_sk)
+-- Liquid clustering leads with date_key: period-grain gold views join sales to
+-- the fiscal calendar and filter/aggregate by time, so date-range pruning matters
+-- most. product_sk/store_sk are the next join keys. promo_sk is intentionally NOT
+-- a clustering key -- it is low-cardinality (most rows carry the single NO_PROMO
+-- member) and would cluster poorly.
+CLUSTER BY (date_key, product_sk, store_sk)
 COMMENT 'ORDM canonical-core POS sales fact (product x store x day). Carries promo_sk for promotion attribution.';

@@ -84,6 +84,12 @@ Numeric columns are typed numeric:
 
 Comments saying "stored as string for flexibility" are a red flag.
 
+### 9a. Single reporting currency in the canonical core
+
+Every monetary column is stored in **one reporting/base currency** (`base_currency`, e.g. `USD`), normalized at ingest. `currency_code` records that base currency and is **constant** across every fact and dimension; `transaction_currency_code` preserves the original currency for lineage only and is never used in arithmetic. The conversion reference is the conformed `calendar.fx_rate` dimension (`to_base(amount) = amount * rate`).
+
+The point: gold aggregations (`SUM(net_revenue)`, `revenue - units * unit_cost`, …) are correct **by construction** — they never sum or subtract mixed currencies. A DQ check on each fact (`*_single_reporting_currency`) enforces the invariant. Storing facts in their original transaction currency and converting in gold is the anti-pattern this avoids.
+
 ## 10. Cross-domain FK direction follows dependency
 
 Customer is a *root* entity. Almost nothing should be FK'd *out* of customer into other domains.

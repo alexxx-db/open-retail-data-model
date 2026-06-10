@@ -74,7 +74,7 @@ ACCOUNT_COLUMNS = [
     "account_id", "account_name", "account_type", "registration_number",
     "tax_id", "gln", "industry_classification_code", "parent_account_id",
     "primary_contact_profile_id", "account_status", "credit_limit_amount",
-    "currency_code", "enrollment_date", "effective_from_date",
+    "currency_code", "transaction_currency_code", "enrollment_date", "effective_from_date",
     "effective_to_date", "current_flag", "record_source", "load_timestamp",
 ]
 
@@ -289,7 +289,7 @@ def build_consents(spark, profiles_current, seed, max_per):
             .withColumn("load_timestamp", F.current_timestamp()))
 
 
-def build_accounts(spark, profiles_current, n, seed):
+def build_accounts(spark, profiles_current, n, seed, base_currency):
     num_profiles = profiles_current.count()
     spec = (
         dg.DataGenerator(spark, name="account", rows=n, partitions=4,
@@ -312,7 +312,10 @@ def build_accounts(spark, profiles_current, n, seed):
         .withColumn("_credit", "int", minValue=5, maxValue=500, omit=True)
         .withColumn("credit_limit_amount", "decimal(18,2)",
                     expr="cast(_credit * 1000 as decimal(18,2))")
-        .withColumn("currency_code", "string", values=CURRENCIES)
+        # credit_limit_amount is in the reporting/base currency; the original
+        # account/billing currency is kept in transaction_currency_code (lineage).
+        .withColumn("transaction_currency_code", "string", values=CURRENCIES)
+        .withColumn("currency_code", "string", expr=f"'{base_currency}'")
         .withColumn("_enr_off", "int", minValue=0, maxValue=3073, omit=True)
         .withColumn("enrollment_date", "date",
                     expr="date_add(date'2018-01-01', _enr_off)")
@@ -347,7 +350,7 @@ def build_accounts(spark, profiles_current, n, seed):
 # Orchestration
 # ------------------------------------------------------------
 def generate(spark, catalog, customer_schema, num_profiles, num_accounts, seed, mode,
-             addr_max=3, contact_max=3, consent_max=4):
+             addr_max=3, contact_max=3, consent_max=4, base_currency="USD"):
     if not catalog:
         raise ValueError("`catalog` parameter is required (guardrail #1: no hardcoded catalog).")
 
@@ -377,7 +380,7 @@ def generate(spark, catalog, customer_schema, num_profiles, num_accounts, seed, 
     _write(spark, consents, fq("consent"), CONSENT_COLUMNS, mode)
 
     # 3. accounts (B2B) referencing profiles by business key
-    accounts = build_accounts(spark, profiles_current.select("profile_id"), num_accounts, seed)
+    accounts = build_accounts(spark, profiles_current.select("profile_id"), num_accounts, seed, base_currency)
     _write(spark, accounts, fq("account"), ACCOUNT_COLUMNS, mode)
 
     print("[ordm] customer domain generation complete.")
@@ -392,9 +395,10 @@ def main():
     num_accounts = int(get_param("num_accounts", cfg["accounts"]))
     seed = int(get_param("seed", cfg["seed"]))
     mode = get_param("mode", "overwrite")
+    base_currency = get_param("base_currency", "USD")
     generate(spark, catalog, customer_schema, num_profiles, num_accounts, seed, mode,
              addr_max=int(cfg["addr_max"]), contact_max=int(cfg["contact_max"]),
-             consent_max=int(cfg["consent_max"]))
+             consent_max=int(cfg["consent_max"]), base_currency=base_currency)
 
 
 if __name__ == "__main__":

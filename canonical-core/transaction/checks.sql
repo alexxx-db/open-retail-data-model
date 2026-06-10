@@ -40,3 +40,10 @@ SELECT s.date_key FROM ${catalog}.${transaction_schema}.sales s
 LEFT JOIN ${catalog}.${calendar_schema}.fiscal_calendar c ON s.date_key = c.date_key
 WHERE c.date_key IS NULL
 GROUP BY s.date_key;
+
+-- check: sales_single_reporting_currency | severity: error
+-- Monetary columns are normalized to the base currency, so currency_code must
+-- be constant across the fact (gold SUMs are then single-currency by construction).
+SELECT COUNT(DISTINCT currency_code) AS distinct_currencies
+FROM ${catalog}.${transaction_schema}.sales
+HAVING COUNT(DISTINCT currency_code) > 1;

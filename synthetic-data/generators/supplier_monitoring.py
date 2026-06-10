@@ -46,7 +46,7 @@ PO_LINE_COLUMNS = [
     "product_id", "store_sk", "store_id", "order_date", "promised_date",
     "actual_delivery_date", "ordered_qty", "received_qty", "defective_qty",
     "returned_qty", "unit_price", "contract_price", "currency_code",
-    "order_status", "record_source", "load_timestamp",
+    "transaction_currency_code", "order_status", "record_source", "load_timestamp",
 ]
 
 SUPPLIER_TYPES = ["manufacturer", "distributor", "wholesaler", "importer", "broker"]
@@ -136,7 +136,8 @@ def build_suppliers(spark, n, seed, profile_weights):
 
 def build_po_lines(spark, params_with_sk, products_current, stores_current,
                    start_date, n_days, seed, lines_per_supplier,
-                   shared_product_ids, exclusive_pairs, exclusive_lines_per_pair):
+                   shared_product_ids, exclusive_pairs, exclusive_lines_per_pair,
+                   base_currency):
     store_dim = stores_current.select("store_sk", "store_id")
     n_stores = store_dim.count()
     start = F.lit(start_date)
@@ -201,7 +202,10 @@ def build_po_lines(spark, params_with_sk, products_current, stores_current,
                          F.when(f_price < F.col("price_over_prob"),
                                 F.round(F.col("contract_price") * (F.lit(1.0) + (f_price * F.lit(0.08) + F.lit(0.02))), 2))
                           .otherwise(F.col("contract_price")))
-             .withColumn("currency_code", F.lit("USD"))
+             # Prices are in the reporting/base currency; procurement is settled
+             # in base (transaction_currency_code preserved for lineage).
+             .withColumn("currency_code", F.lit(base_currency))
+             .withColumn("transaction_currency_code", F.lit(base_currency))
              .withColumn("order_status", F.lit("received"))
              .withColumn("po_id", F.concat_ws("-", F.lit("PO"), F.col("supplier_id"),
                                               (F.col("line_idx") / F.lit(5)).cast("int")))
@@ -211,7 +215,7 @@ def build_po_lines(spark, params_with_sk, products_current, stores_current,
     return lines
 
 
-def generate(spark, catalog, schemas, cfg, mode):
+def generate(spark, catalog, schemas, cfg, mode, base_currency="USD"):
     if not catalog:
         raise ValueError("`catalog` parameter is required (guardrail #1: no hardcoded catalog).")
 
@@ -248,7 +252,8 @@ def generate(spark, catalog, schemas, cfg, mode):
         supplier_current.select("supplier_id", "supplier_sk"), on="supplier_id", how="inner")
     po_lines = build_po_lines(spark, params_with_sk, products_current, stores_current,
                               start_date, n_days, seed, cfg["lines_per_supplier"],
-                              shared_product_ids, exclusive_pairs, cfg["exclusive_lines_per_pair"])
+                              shared_product_ids, exclusive_pairs, cfg["exclusive_lines_per_pair"],
+                              base_currency)
     _write(spark, po_lines, fq("procurement", "purchase_order_line"), PO_LINE_COLUMNS, mode)
 
     print("[ordm] Supplier Monitoring generation complete.")
@@ -266,11 +271,12 @@ def main():
         "calendar": get_param("calendar_schema", "calendar"),
     }
     mode = get_param("mode", "overwrite")
+    base_currency = get_param("base_currency", "USD")
     for key in ("suppliers", "lines_per_supplier"):
         val = get_param(key, "")
         if val:
             cfg[key] = int(val)
-    generate(spark, catalog, schemas, cfg, mode)
+    generate(spark, catalog, schemas, cfg, mode, base_currency)
 
 
 if __name__ == "__main__":

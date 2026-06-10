@@ -44,8 +44,12 @@ except ImportError:  # ensure sibling modules are importable when run as a noteb
 PRODUCT_COLUMNS = [
     "product_id", "gtin", "sku", "product_name", "brand", "category",
     "subcategory", "department", "unit_of_measure", "list_price", "unit_cost",
-    "currency_code", "product_status", "effective_from_date",
+    "currency_code", "transaction_currency_code", "product_status", "effective_from_date",
     "effective_to_date", "current_flag", "record_source", "load_timestamp",
+]
+FX_RATE_COLUMNS = [
+    "fx_rate_id", "date_key", "from_currency_code", "to_currency_code",
+    "rate", "record_source", "load_timestamp",
 ]
 STORE_COLUMNS = [
     "store_id", "gln", "store_name", "store_format", "region", "district",
@@ -63,8 +67,8 @@ FISCAL_CALENDAR_COLUMNS = [
 SALES_COLUMNS = [
     "sales_id", "date_key", "product_sk", "product_id", "store_sk",
     "store_id", "promo_sk", "promo_id", "units", "gross_revenue",
-    "discount_amount", "net_revenue", "currency_code", "record_source",
-    "load_timestamp",
+    "discount_amount", "net_revenue", "currency_code", "transaction_currency_code",
+    "record_source", "load_timestamp",
 ]
 PROMOTION_COLUMNS = [
     "promo_id", "promo_name", "promo_type", "funding_type", "funded_by",
@@ -95,6 +99,10 @@ BRANDS = ["brand_a", "brand_b", "brand_c", "brand_d", "private_label"]
 REGIONS = ["north", "south", "east", "west", "central"]
 COUNTRY_CODES = ["US", "CA", "GB", "FR", "DE"]
 CURRENCIES = ["USD", "EUR", "GBP", "CAD"]
+# Representative source -> USD rates. The fx_rate dimension is the conversion
+# reference an ingest pipeline would use; synthetic monetary columns are already
+# emitted in base, so these populate fx_rate for completeness/auditing.
+FX_TO_USD = {"USD": 1.0, "EUR": 1.08, "GBP": 1.27, "CAD": 0.74}
 
 NO_PROMO_ID = "NO_PROMO"
 
@@ -179,7 +187,7 @@ def build_fiscal_calendar(spark, start_date_str, weeks, seed):
 # ------------------------------------------------------------
 # Product / store masters (dbldatagen)
 # ------------------------------------------------------------
-def build_products(spark, n, seed):
+def build_products(spark, n, seed, base_currency):
     spec = (
         dg.DataGenerator(spark, name="product", rows=n, partitions=4,
                          randomSeedMethod="fixed", randomSeed=seed)
@@ -198,10 +206,31 @@ def build_products(spark, n, seed):
         # margin is positive but compresses under deep promotional discounts.
         .withColumn("_cost_ratio", "int", minValue=50, maxValue=80, omit=True)
         .withColumn("unit_cost", "decimal(18,2)", expr="cast(_price * _cost_ratio as decimal(18,2)) / 10000")
-        .withColumn("currency_code", "string", values=CURRENCIES)
+        # list_price/unit_cost are already in the reporting/base currency (normalized
+        # at ingest); transaction_currency_code records the original sourcing currency
+        # (products are sourced internationally) for lineage only.
+        .withColumn("transaction_currency_code", "string", values=CURRENCIES)
+        .withColumn("currency_code", "string", expr=f"'{base_currency}'")
         .withColumn("product_status", "string", values=PRODUCT_STATUS, weights=[90, 7, 3])
     )
     return _stamp_scd2(spec.build(), "2018-01-01")
+
+
+def build_fx_rate(spark, calendar_df, base_currency, seed):
+    """Daily from->base FX rates for every source currency (incl. the base
+    self-rate = 1). The conversion reference for currency normalization."""
+    rates = spark.createDataFrame(
+        [(ccy, float(r)) for ccy, r in FX_TO_USD.items()],
+        "from_currency_code string, rate double")
+    days = calendar_df.select("date_key").distinct()
+    return (days.crossJoin(rates)
+            .withColumn("to_currency_code", F.lit(base_currency))
+            .withColumn("rate", F.col("rate").cast("decimal(18,8)"))
+            .withColumn("fx_rate_id", F.concat_ws("|", F.col("date_key"),
+                                                  F.col("from_currency_code"),
+                                                  F.col("to_currency_code")))
+            .withColumn("record_source", F.lit(RECORD_SOURCE))
+            .withColumn("load_timestamp", F.current_timestamp()))
 
 
 def build_stores(spark, n, seed):
@@ -332,7 +361,7 @@ def build_promotion_scope(spark, promo_ids, product_ids, store_ids, seed,
 # ------------------------------------------------------------
 def build_sales(spark, calendar_df, products_current, stores_current,
                 promo_windows, fb_windows, cannib_windows, no_promo_sk, seed,
-                density, fb_factor, cannib_factor):
+                density, fb_factor, cannib_factor, base_currency):
     prod = products_current.select("product_sk", "product_id", "list_price")
     stores = stores_current.select("store_sk", "store_id")
     days = calendar_df.select("date_key")
@@ -399,6 +428,10 @@ def build_sales(spark, calendar_df, products_current, stores_current,
             .withColumn("gross_revenue", gross)
             .withColumn("discount_amount", discount)
             .withColumn("net_revenue", F.col("gross_revenue") - F.col("discount_amount"))
+            # Monetary columns are in the reporting/base currency; sales are
+            # transacted in the home market (= base) so lineage equals base too.
+            .withColumn("currency_code", F.lit(base_currency))
+            .withColumn("transaction_currency_code", F.lit(base_currency))
             .withColumn("promo_sk", F.coalesce(F.col("w_promo_sk"), F.lit(no_promo_sk)))
             .withColumn("promo_id", F.coalesce(F.col("w_promo_id"), F.lit(NO_PROMO_ID)))
             .withColumn("sales_id", F.concat_ws("-", F.lit("SAL"), F.col("product_id"),
@@ -410,7 +443,7 @@ def build_sales(spark, calendar_df, products_current, stores_current,
 # ------------------------------------------------------------
 # Orchestration
 # ------------------------------------------------------------
-def generate(spark, catalog, schemas, cfg, mode):
+def generate(spark, catalog, schemas, cfg, mode, base_currency="USD"):
     if not catalog:
         raise ValueError("`catalog` parameter is required (guardrail #1: no hardcoded catalog).")
 
@@ -422,13 +455,15 @@ def generate(spark, catalog, schemas, cfg, mode):
           f"(products={cfg['products']}, stores={cfg['stores']}, "
           f"promotions={cfg['promotions']}, seed={seed}, mode={mode})")
 
-    # 1. fiscal calendar
+    # 1. fiscal calendar + FX rates (the currency-normalization reference)
     calendar_df = build_fiscal_calendar(spark, cfg["calendar_start_date"], cfg["calendar_weeks"], seed)
     _write(spark, calendar_df, fq("calendar", "fiscal_calendar"), FISCAL_CALENDAR_COLUMNS, mode)
     calendar_tbl = spark.table(fq("calendar", "fiscal_calendar"))
+    _write(spark, build_fx_rate(spark, calendar_tbl, base_currency, seed),
+           fq("calendar", "fx_rate"), FX_RATE_COLUMNS, mode)
 
     # 2. product / store masters
-    _write(spark, build_products(spark, cfg["products"], seed), fq("product", "product"), PRODUCT_COLUMNS, mode)
+    _write(spark, build_products(spark, cfg["products"], seed, base_currency), fq("product", "product"), PRODUCT_COLUMNS, mode)
     _write(spark, build_stores(spark, cfg["stores"], seed), fq("store", "store"), STORE_COLUMNS, mode)
     products_current = spark.table(fq("product", "product")).where("current_flag = true")
     stores_current = spark.table(fq("store", "store")).where("current_flag = true")
@@ -504,7 +539,7 @@ def generate(spark, catalog, schemas, cfg, mode):
     sales = build_sales(spark, calendar_tbl, products_current, stores_current,
                         promo_windows, fb_windows, cannib_windows, no_promo_sk, seed,
                         cfg["daily_sales_density"], cfg["forward_buy_dip_factor"],
-                        cfg["cannibalization_dip_factor"])
+                        cfg["cannibalization_dip_factor"], base_currency)
     _write(spark, sales, fq("transaction", "sales"), SALES_COLUMNS, mode)
 
     print("[ordm] Trade Promotion generation complete.")
@@ -522,12 +557,13 @@ def main():
         "promo": get_param("promo_schema", "promote_with_purpose"),
     }
     mode = get_param("mode", "overwrite")
+    base_currency = get_param("base_currency", "USD")
     # Allow volume overrides via params (else seeds.yaml defaults).
     for key in ("products", "stores", "promotions", "calendar_weeks"):
         val = get_param(key, "")
         if val:
             cfg[key] = int(val)
-    generate(spark, catalog, schemas, cfg, mode)
+    generate(spark, catalog, schemas, cfg, mode, base_currency)
 
 
 if __name__ == "__main__":

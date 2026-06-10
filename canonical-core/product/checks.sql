@@ -33,3 +33,11 @@ WHERE unit_cost IS NOT NULL AND unit_cost < 0;
 -- Cost above list price means a structural loss-leader; surface it for review.
 SELECT * FROM ${catalog}.${product_schema}.product
 WHERE unit_cost IS NOT NULL AND list_price IS NOT NULL AND unit_cost > list_price;
+
+-- check: product_single_reporting_currency | severity: error
+-- The canonical core is single-currency: every monetary column is stored in
+-- the base currency, so currency_code must be constant. (transaction_currency_code
+-- carries the original sourcing currency and is intentionally NOT constrained.)
+SELECT COUNT(DISTINCT currency_code) AS distinct_currencies
+FROM ${catalog}.${product_schema}.product
+HAVING COUNT(DISTINCT currency_code) > 1;

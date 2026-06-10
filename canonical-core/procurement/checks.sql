@@ -44,3 +44,9 @@ SELECT pol.order_date FROM ${catalog}.${procurement_schema}.purchase_order_line 
 LEFT JOIN ${catalog}.${calendar_schema}.fiscal_calendar c ON pol.order_date = c.date_key
 WHERE c.date_key IS NULL
 GROUP BY pol.order_date;
+
+-- check: pol_single_reporting_currency | severity: error
+-- Prices are normalized to the base currency; currency_code must be constant.
+SELECT COUNT(DISTINCT currency_code) AS distinct_currencies
+FROM ${catalog}.${procurement_schema}.purchase_order_line
+HAVING COUNT(DISTINCT currency_code) > 1;

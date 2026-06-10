@@ -27,9 +27,10 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${product_schema}.product (
   subcategory           STRING COMMENT 'Merchandising subcategory.',
   department            STRING COMMENT 'Store department the product belongs to.',
   unit_of_measure       STRING COMMENT 'Selling unit of measure. Allowed values: each, kg, g, l, ml, pack.',
-  list_price            DECIMAL(18,2) COMMENT 'Standard list (shelf) price in the catalog currency.',
-  unit_cost             DECIMAL(18,2) COMMENT 'Standard unit cost (COGS) in the catalog currency. Basis for margin = revenue - units * unit_cost. A master cost attribute, not a derived metric.',
-  currency_code         STRING COMMENT 'Currency of list_price / unit_cost, ISO 4217 alpha-3.',
+  list_price            DECIMAL(18,2) COMMENT 'Standard list (shelf) price, in the reporting/base currency (normalized at ingest).',
+  unit_cost             DECIMAL(18,2) COMMENT 'Standard unit cost (COGS), in the reporting/base currency. Basis for margin = revenue - units * unit_cost. A master cost attribute, not a derived metric.',
+  currency_code         STRING COMMENT 'Reporting/base currency of ALL monetary columns, ISO 4217 alpha-3. Equals the deploy base_currency; the canonical core is single-currency by construction.',
+  transaction_currency_code STRING COMMENT 'Original sourcing currency before normalization (lineage only), ISO 4217 alpha-3. Convert with fx_rate.',
   product_status        STRING COMMENT 'Lifecycle status. Allowed values: active, inactive, discontinued.',
 
   -- SCD2 versioning (principle #8)

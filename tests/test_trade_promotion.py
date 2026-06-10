@@ -27,6 +27,7 @@ TABLES = {
     "product": ("canonical-core/product/tables/product.sql", "product_sk", "PRODUCT_COLUMNS"),
     "store": ("canonical-core/store/tables/store.sql", "store_sk", "STORE_COLUMNS"),
     "fiscal_calendar": ("canonical-core/calendar/tables/fiscal_calendar.sql", "calendar_sk", "FISCAL_CALENDAR_COLUMNS"),
+    "fx_rate": ("canonical-core/calendar/tables/fx_rate.sql", "fx_rate_sk", "FX_RATE_COLUMNS"),
     "sales": ("canonical-core/transaction/tables/sales.sql", "sales_sk", "SALES_COLUMNS"),
     "promotion": ("outcome-packages/promote-with-purpose/tables/promotion.sql", "promo_sk", "PROMOTION_COLUMNS"),
     "promotion_scope": ("outcome-packages/promote-with-purpose/tables/promotion_scope.sql", "scope_sk", "PROMOTION_SCOPE_COLUMNS"),

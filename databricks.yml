@@ -14,6 +14,15 @@ variables:
     description: "Target Unity Catalog for ORDM (e.g. retail_mvm, retail_ecm)."
     default: "retail_mvm"
 
+  # Reporting / base currency. The canonical core normalizes ALL monetary
+  # columns to this currency at ingest (currency_code = base on every row);
+  # transaction_currency_code preserves the original currency for lineage, and
+  # the fx_rate dimension is the conversion reference. Gold aggregations are
+  # therefore single-currency and correct.
+  base_currency:
+    description: "Reporting/base currency for all monetary columns (ISO 4217)."
+    default: "USD"
+
   # Per-domain schema names. Each canonical-core domain (and each outcome
   # package) is its own Unity Catalog schema; SQL references the matching
   # ${<domain>_schema} token and never hardcodes a schema name (guardrail #1).

@@ -34,10 +34,11 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${transaction_schema}.sales (
   promo_id              STRING COMMENT 'Durable promotion business key; equals NO_PROMO when the sale was not on promotion.',
 
   units                 INT           COMMENT 'Units sold (count).',
-  gross_revenue         DECIMAL(18,2) COMMENT 'Gross sales amount before promotional discount, in store currency.',
-  discount_amount       DECIMAL(18,2) COMMENT 'Promotional discount amount applied.',
-  net_revenue           DECIMAL(18,2) COMMENT 'Net sales amount after discount (gross_revenue - discount_amount).',
-  currency_code         STRING        COMMENT 'Currency of monetary columns, ISO 4217 alpha-3.',
+  gross_revenue         DECIMAL(18,2) COMMENT 'Gross sales amount before promotional discount, in the reporting/base currency.',
+  discount_amount       DECIMAL(18,2) COMMENT 'Promotional discount amount applied, in the reporting/base currency.',
+  net_revenue           DECIMAL(18,2) COMMENT 'Net sales amount after discount (gross_revenue - discount_amount), in the reporting/base currency.',
+  currency_code         STRING        COMMENT 'Reporting/base currency of ALL monetary columns, ISO 4217 alpha-3. Equals the deploy base_currency; the canonical core is single-currency by construction.',
+  transaction_currency_code STRING    COMMENT 'Original transaction currency before normalization (lineage only), ISO 4217 alpha-3. Convert with fx_rate.',
 
   record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
   load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded (ISO 8601).',

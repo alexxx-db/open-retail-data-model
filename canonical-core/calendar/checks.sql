@@ -36,3 +36,43 @@ SELECT fiscal_year, COUNT(DISTINCT fiscal_week) AS weeks_in_year
 FROM ${catalog}.${calendar_schema}.fiscal_calendar
 GROUP BY fiscal_year
 HAVING COUNT(DISTINCT fiscal_week) > 53;
+
+-- ------------------------------------------------------------
+-- fx_rate (currency-normalization reference)
+-- ------------------------------------------------------------
+
+-- check: fx_rate_keys_not_null | severity: error
+SELECT * FROM ${catalog}.${calendar_schema}.fx_rate
+WHERE fx_rate_sk IS NULL OR fx_rate_id IS NULL OR date_key IS NULL
+   OR from_currency_code IS NULL OR to_currency_code IS NULL OR rate IS NULL;
+
+-- check: fx_rate_id_unique | severity: error
+-- One rate per (date, from, to).
+SELECT date_key, from_currency_code, to_currency_code, COUNT(*) AS rows
+FROM ${catalog}.${calendar_schema}.fx_rate
+GROUP BY date_key, from_currency_code, to_currency_code
+HAVING COUNT(*) > 1;
+
+-- check: fx_rate_positive | severity: error
+-- FX rates must be strictly positive.
+SELECT * FROM ${catalog}.${calendar_schema}.fx_rate
+WHERE rate <= 0;
+
+-- check: fx_rate_base_self_rate | severity: error
+-- The base->base self-rate must be exactly 1 (identity conversion).
+SELECT * FROM ${catalog}.${calendar_schema}.fx_rate
+WHERE from_currency_code = to_currency_code AND rate <> 1;
+
+-- check: fx_rate_calendar_coverage | severity: warn
+-- Every rate date should exist in the fiscal calendar.
+SELECT fx.date_key FROM ${catalog}.${calendar_schema}.fx_rate fx
+LEFT JOIN ${catalog}.${calendar_schema}.fiscal_calendar c ON fx.date_key = c.date_key
+WHERE c.date_key IS NULL
+GROUP BY fx.date_key;
+
+-- check: fx_rate_single_base | severity: error
+-- The canonical core normalizes to ONE reporting currency: every row must
+-- convert TO the same base currency.
+SELECT COUNT(DISTINCT to_currency_code) AS distinct_base
+FROM ${catalog}.${calendar_schema}.fx_rate
+HAVING COUNT(DISTINCT to_currency_code) > 1;

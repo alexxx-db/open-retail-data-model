@@ -30,8 +30,9 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.account (
   primary_contact_profile_id STRING COMMENT 'Business key of the individual (profile) who is the primary contact for the account.',
 
   account_status        STRING       COMMENT 'Lifecycle status. Allowed values: prospect, active, inactive, closed.',
-  credit_limit_amount   DECIMAL(18,2) COMMENT 'Assigned credit limit for the account, in currency_code.',
-  currency_code         STRING        COMMENT 'Currency of monetary attributes, ISO 4217 alpha-3 (e.g. USD, EUR).',
+  credit_limit_amount   DECIMAL(18,2) COMMENT 'Assigned credit limit for the account, in the reporting/base currency.',
+  currency_code         STRING        COMMENT 'Reporting/base currency of ALL monetary columns, ISO 4217 alpha-3. Equals the deploy base_currency; the canonical core is single-currency by construction.',
+  transaction_currency_code STRING    COMMENT 'Original account/billing currency before normalization (lineage only), ISO 4217 alpha-3. Convert with fx_rate.',
   enrollment_date       DATE          COMMENT 'Date the account was established (ISO 8601 date).',
 
   -- SCD2 versioning (principle #8)

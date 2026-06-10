@@ -32,9 +32,10 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${order_schema}.customer_order_line (
 
   order_date            DATE COMMENT 'Order date. FK to fiscal_calendar.date_key (ISO 8601).',
   units                 INT  COMMENT 'Units purchased on this line.',
-  gross_amount          DECIMAL(18,2) COMMENT 'Gross line amount before discount, in currency_code.',
-  net_amount            DECIMAL(18,2) COMMENT 'Net line amount after discount.',
-  currency_code         STRING        COMMENT 'Currency of amounts, ISO 4217 alpha-3.',
+  gross_amount          DECIMAL(18,2) COMMENT 'Gross line amount before discount, in the reporting/base currency.',
+  net_amount            DECIMAL(18,2) COMMENT 'Net line amount after discount, in the reporting/base currency.',
+  currency_code         STRING        COMMENT 'Reporting/base currency of ALL monetary columns, ISO 4217 alpha-3. Equals the deploy base_currency; the canonical core is single-currency by construction.',
+  transaction_currency_code STRING    COMMENT 'Original transaction currency before normalization (lineage only), ISO 4217 alpha-3. Convert with fx_rate.',
 
   record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
   load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded (ISO 8601).',

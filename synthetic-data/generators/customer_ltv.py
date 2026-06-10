@@ -34,7 +34,8 @@ except ImportError:  # ensure sibling modules are importable when run as a noteb
 CUSTOMER_ORDER_LINE_COLUMNS = [
     "order_line_id", "order_id", "profile_sk", "profile_id", "product_sk",
     "product_id", "store_sk", "store_id", "order_date", "units",
-    "gross_amount", "net_amount", "currency_code", "record_source", "load_timestamp",
+    "gross_amount", "net_amount", "currency_code", "transaction_currency_code",
+    "record_source", "load_timestamp",
 ]
 
 
@@ -50,7 +51,8 @@ def load_config():
 
 
 def build_order_lines(spark, profiles_current, products_current, stores_current,
-                      start_date, n_days, seed, max_orders, value_skew, lines_per_order_max):
+                      start_date, n_days, seed, max_orders, value_skew, lines_per_order_max,
+                      base_currency):
     start = F.lit(start_date)
     prod_dim = products_current.select("product_sk", "product_id", "list_price")
     store_dim = stores_current.select("store_sk", "store_id")
@@ -85,7 +87,10 @@ def build_order_lines(spark, profiles_current, products_current, stores_current,
              .withColumn("net_amount",
                          F.round(F.col("gross_amount")
                                  * (F.lit(1.0) - _frac(seed, "disc", "profile_id", "order_idx", "line_idx") * F.lit(0.2)), 2))
-             .withColumn("currency_code", F.lit("USD"))
+             # Amounts are in the reporting/base currency; consumer orders are
+             # transacted in the home market (= base).
+             .withColumn("currency_code", F.lit(base_currency))
+             .withColumn("transaction_currency_code", F.lit(base_currency))
              .withColumn("order_line_id",
                          F.concat_ws("-", F.lit("ORDL"), F.col("profile_id"), F.col("order_idx"), F.col("line_idx")))
              .withColumn("record_source", F.lit(RECORD_SOURCE))
@@ -93,7 +98,7 @@ def build_order_lines(spark, profiles_current, products_current, stores_current,
     return lines
 
 
-def generate(spark, catalog, schemas, cfg, mode):
+def generate(spark, catalog, schemas, cfg, mode, base_currency="USD"):
     if not catalog:
         raise ValueError("`catalog` parameter is required (guardrail #1: no hardcoded catalog).")
 
@@ -113,7 +118,7 @@ def generate(spark, catalog, schemas, cfg, mode):
 
     lines = build_order_lines(spark, profiles_current, products_current, stores_current,
                               start_date, n_days, seed, cfg["max_orders"], cfg["value_skew"],
-                              cfg["lines_per_order_max"])
+                              cfg["lines_per_order_max"], base_currency)
     _write(spark, lines, fq("order", "customer_order_line"), CUSTOMER_ORDER_LINE_COLUMNS, mode)
     print("[ordm] Customer LTV generation complete.")
 
@@ -130,7 +135,8 @@ def main():
         "order": get_param("order_schema", "orders"),
     }
     mode = get_param("mode", "overwrite")
-    generate(spark, catalog, schemas, cfg, mode)
+    base_currency = get_param("base_currency", "USD")
+    generate(spark, catalog, schemas, cfg, mode, base_currency)
 
 
 if __name__ == "__main__":

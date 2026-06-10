@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${procurement_schema}.purchase_order_line 
   defective_qty         INT COMMENT 'Units received defective.',
   returned_qty          INT COMMENT 'Units returned to the supplier.',
 
-  unit_price            DECIMAL(18,2) COMMENT 'Invoiced unit price, in the reporting/base currency.',
-  contract_price        DECIMAL(18,2) COMMENT 'Agreed contract unit price (basis for price compliance), in the reporting/base currency.',
+  unit_price            DECIMAL(18,4) COMMENT 'Invoiced unit price, in the reporting/base currency. Unit-grain price: DECIMAL(18,4) (principle #9d).',
+  contract_price        DECIMAL(18,4) COMMENT 'Agreed contract unit price (basis for price compliance), in the reporting/base currency. Unit-grain price: DECIMAL(18,4) (principle #9d).',
   currency_code         STRING        COMMENT 'Reporting/base currency of ALL monetary columns, ISO 4217 alpha-3. Equals the deploy base_currency; the canonical core is single-currency by construction.',
   transaction_currency_code STRING    COMMENT 'Original purchasing currency before normalization (lineage only), ISO 4217 alpha-3. Convert with fx_rate.',
   order_status          STRING        COMMENT 'Line status. Allowed values: open, received, closed, cancelled.',

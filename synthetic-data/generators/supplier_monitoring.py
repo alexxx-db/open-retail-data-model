@@ -200,11 +200,12 @@ def build_po_lines(spark, params_with_sk, products_current, stores_current,
     lines = attach_random_dim(lines, store_dim, n_stores, "store", seed, "supplier_id", "line_idx")
     lines = (lines
              .join(products_current.select("product_id", "product_sk", "list_price"), on="product_id", how="inner")
-             .withColumn("contract_price", F.round(F.col("list_price") * F.lit(0.6), 2))
+             # Unit-grain prices keep 4 decimals (principle #9d).
+             .withColumn("contract_price", F.round(F.col("list_price") * F.lit(0.6), 4))
              # compliant unless this line draws an overage (profile probability)
              .withColumn("unit_price",
                          F.when(f_price < F.col("price_over_prob"),
-                                F.round(F.col("contract_price") * (F.lit(1.0) + (f_price * F.lit(0.08) + F.lit(0.02))), 2))
+                                F.round(F.col("contract_price") * (F.lit(1.0) + (f_price * F.lit(0.08) + F.lit(0.02))), 4))
                           .otherwise(F.col("contract_price")))
              # Prices are in the reporting/base currency; procurement is settled
              # in base (transaction_currency_code preserved for lineage).

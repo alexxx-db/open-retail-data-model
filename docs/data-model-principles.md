@@ -84,7 +84,7 @@ Numeric columns are typed numeric:
 - Counts and ranks → `INT`
 - Scores in defined range → `INT` or `DECIMAL` (whichever fits)
 - Dates → `DATE`, timestamps → `TIMESTAMP`
-- Currency → `DECIMAL(18,2)` (not `STRING`)
+- Money → `DECIMAL` (never `FLOAT`/`DOUBLE` — see 9d for scale)
 
 Comments saying "stored as string for flexibility" are a red flag.
 
@@ -101,6 +101,16 @@ Every `TIMESTAMP` column holds an instant in **UTC** (the storage contract; colu
 ### 9c. Boolean naming — `is_*`
 
 All boolean columns use the `is_*` prefix (`is_current`, `is_primary`, `is_verified`, `is_weekend`, `is_holiday`). No `*_flag` suffix or bare adjectives — including the SCD2 current-version indicator, which is `is_current` (not `current_flag`).
+
+### 9d. Money scale follows grain
+
+Money is `DECIMAL`, with the scale chosen by grain so per-unit rounding never silently accumulates:
+
+- **Unit-grain price/cost** (per single unit) → `DECIMAL(18,4)`. Examples: `product.list_price`, `product.unit_cost`, `purchase_order_line.unit_price`, `purchase_order_line.contract_price`. The extra 2 digits absorb fractional-cent unit costs and FX-converted unit prices.
+- **Transaction / aggregate amounts** (already extended and rounded to the minor unit) → `DECIMAL(18,2)`. Examples: `sales.gross_revenue` / `net_revenue`, `customer_order_line.net_amount`, `account.credit_limit_amount`, `promotion.planned_trade_spend`.
+- **Rates / ratios** → wider scale as needed: `fx_rate.rate` is `DECIMAL(18,8)`; percentages are `DECIMAL(p,2)`.
+
+Rule of thumb: if the value gets *multiplied by a quantity* downstream, it is unit-grain and takes scale 4; if it is already a total, scale 2.
 
 ## 10. Cross-domain FK direction follows dependency
 

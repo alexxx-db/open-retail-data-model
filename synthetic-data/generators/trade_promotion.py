@@ -204,11 +204,12 @@ def build_products(spark, n, seed, base_currency):
         .withColumn("department", "string", values=DEPARTMENTS)
         .withColumn("unit_of_measure", "string", values=UNITS_OF_MEASURE)
         .withColumn("_price", "int", minValue=99, maxValue=4999, omit=True)
-        .withColumn("list_price", "decimal(18,2)", expr="cast(_price as decimal(18,2)) / 100")
+        # Unit-grain prices/costs are DECIMAL(18,4) (principle #9d).
+        .withColumn("list_price", "decimal(18,4)", expr="cast(_price as decimal(18,4)) / 100")
         # Unit cost = 50-80% of list price (deterministic per product), so per-unit
         # margin is positive but compresses under deep promotional discounts.
         .withColumn("_cost_ratio", "int", minValue=50, maxValue=80, omit=True)
-        .withColumn("unit_cost", "decimal(18,2)", expr="cast(_price * _cost_ratio as decimal(18,2)) / 10000")
+        .withColumn("unit_cost", "decimal(18,4)", expr="cast(_price * _cost_ratio as decimal(18,4)) / 10000")
         # list_price/unit_cost are already in the reporting/base currency (normalized
         # at ingest); transaction_currency_code records the original sourcing currency
         # (products are sourced internationally) for lineage only.

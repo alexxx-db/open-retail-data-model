@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${transaction_schema}.sales (
   transaction_currency_code STRING    COMMENT 'Original transaction currency before normalization (lineage only), ISO 4217 alpha-3. Convert with fx_rate.',
 
   record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
-  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded (ISO 8601).',
+  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded into the canonical core (UTC, ISO 8601).',
 
   CONSTRAINT pk_sales PRIMARY KEY (sales_sk)
 )

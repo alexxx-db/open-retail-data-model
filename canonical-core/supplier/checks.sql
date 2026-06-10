@@ -6,12 +6,12 @@
 
 -- check: supplier_keys_not_null | severity: error
 SELECT * FROM ${catalog}.${supplier_schema}.supplier
-WHERE supplier_sk IS NULL OR supplier_id IS NULL OR current_flag IS NULL;
+WHERE supplier_sk IS NULL OR supplier_id IS NULL OR is_current IS NULL;
 
 -- check: supplier_business_key_unique_current | severity: error
 SELECT supplier_id, COUNT(*) AS current_versions
 FROM ${catalog}.${supplier_schema}.supplier
-WHERE current_flag = true
+WHERE is_current = true
 GROUP BY supplier_id
 HAVING COUNT(*) > 1;
 

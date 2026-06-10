@@ -21,13 +21,13 @@
 -- Surrogate key, business key, SCD2 start date and current flag are mandatory.
 SELECT * FROM ${catalog}.${customer_schema}.profile
 WHERE profile_sk IS NULL OR profile_id IS NULL
-   OR effective_from_date IS NULL OR current_flag IS NULL;
+   OR effective_from_date IS NULL OR is_current IS NULL;
 
 -- check: profile_business_key_unique_current | severity: error
 -- A business key must resolve to at most one current version.
 SELECT profile_id, COUNT(*) AS current_versions
 FROM ${catalog}.${customer_schema}.profile
-WHERE current_flag = true
+WHERE is_current = true
 GROUP BY profile_id
 HAVING COUNT(*) > 1;
 
@@ -40,8 +40,8 @@ WHERE customer_status IS NOT NULL
 -- check: profile_scd2_current_open | severity: error
 -- The current version must have an open (NULL) end date; non-current must be closed.
 SELECT * FROM ${catalog}.${customer_schema}.profile
-WHERE (current_flag = true  AND effective_to_date IS NOT NULL)
-   OR (current_flag = false AND effective_to_date IS NULL);
+WHERE (is_current = true  AND effective_to_date IS NOT NULL)
+   OR (is_current = false AND effective_to_date IS NULL);
 
 -- check: profile_scd2_date_order | severity: error
 -- When set, the end date must be strictly after the start date.
@@ -54,7 +54,7 @@ WHERE effective_to_date IS NOT NULL
 -- check: address_keys_not_null | severity: error
 SELECT * FROM ${catalog}.${customer_schema}.address
 WHERE address_sk IS NULL OR address_id IS NULL OR profile_id IS NULL
-   OR current_flag IS NULL;
+   OR is_current IS NULL;
 
 -- check: address_profile_fk_orphan | severity: error
 -- Every address must reference an existing profile (by surrogate FK).
@@ -107,7 +107,7 @@ WHERE contact_type = 'email' AND contact_value NOT LIKE '%@%.%';
 SELECT * FROM ${catalog}.${customer_schema}.consent
 WHERE consent_sk IS NULL OR consent_id IS NULL OR profile_id IS NULL
    OR consent_type IS NULL OR consent_status IS NULL
-   OR valid_from_timestamp IS NULL OR current_flag IS NULL;
+   OR effective_from_date IS NULL OR is_current IS NULL;
 
 -- check: consent_profile_businesskey_orphan | severity: error
 SELECT c.* FROM ${catalog}.${customer_schema}.consent c
@@ -128,7 +128,7 @@ WHERE consent_status NOT IN ('granted', 'withdrawn', 'pending', 'expired');
 -- Single source of truth: at most one current consent per (profile, type).
 SELECT profile_id, consent_type, COUNT(*) AS current_rows
 FROM ${catalog}.${customer_schema}.consent
-WHERE current_flag = true
+WHERE is_current = true
 GROUP BY profile_id, consent_type
 HAVING COUNT(*) > 1;
 
@@ -136,7 +136,7 @@ HAVING COUNT(*) > 1;
 
 -- check: account_keys_not_null | severity: error
 SELECT * FROM ${catalog}.${customer_schema}.account
-WHERE account_sk IS NULL OR account_id IS NULL OR current_flag IS NULL;
+WHERE account_sk IS NULL OR account_id IS NULL OR is_current IS NULL;
 
 -- check: account_type_domain | severity: error
 SELECT * FROM ${catalog}.${customer_schema}.account

@@ -193,7 +193,7 @@ def _build(spark):
          (2, "P-2", "Promo 2", "FEATURE", "BILL_BACK", "SUPPLIER", 30.0, 600.0, 202403, 202403, True)],
         "promo_sk int, promo_id string, promo_name string, promo_type string, funding_type string, "
         "funded_by string, planned_lift_pct double, planned_trade_spend double, fiscal_week_start int, "
-        "fiscal_week_end int, current_flag boolean",
+        "fiscal_week_end int, is_current boolean",
     ).createOrReplaceTempView("promotion")
     spark.createDataFrame([(1, 1, 1), (2, 1, 1)], "promo_sk int, product_sk int, store_sk int") \
          .createOrReplaceTempView("promotion_scope")

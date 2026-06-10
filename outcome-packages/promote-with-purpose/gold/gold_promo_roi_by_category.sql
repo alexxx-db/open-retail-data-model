@@ -45,7 +45,7 @@ fiscal_weeks AS (
 prod AS (
   SELECT product_sk, category, list_price, unit_cost
   FROM ${catalog}.${product_schema}.product
-  WHERE current_flag = true
+  WHERE is_current = true
 ),
 promo AS (
   SELECT
@@ -56,7 +56,7 @@ promo AS (
   FROM ${catalog}.${promo_schema}.promotion p
   JOIN fiscal_weeks sw ON sw.fiscal_week_id = p.fiscal_week_start
   JOIN fiscal_weeks ew ON ew.fiscal_week_id = p.fiscal_week_end
-  WHERE p.current_flag = true
+  WHERE p.is_current = true
     AND p.promo_id <> 'NO_PROMO'
 ),
 scope_prod AS (

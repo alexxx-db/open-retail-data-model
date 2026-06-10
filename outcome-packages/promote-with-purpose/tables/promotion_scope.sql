@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${promo_schema}.promotion_scope (
   store_id              STRING NOT NULL COMMENT 'Durable store business key.',
 
   record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
-  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded (ISO 8601).',
+  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded into the canonical core (UTC, ISO 8601).',
 
   CONSTRAINT pk_promotion_scope PRIMARY KEY (scope_sk)
 )

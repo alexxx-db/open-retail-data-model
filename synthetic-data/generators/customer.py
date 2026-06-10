@@ -49,33 +49,37 @@ PROFILE_COLUMNS = [
     "name_suffix", "date_of_birth", "gender", "preferred_language_code",
     "nationality_country_code", "loyalty_id", "household_id",
     "customer_status", "enrollment_date", "effective_from_date",
-    "effective_to_date", "current_flag", "record_source", "load_timestamp",
+    "effective_to_date", "is_current", "created_timestamp",
+    "source_updated_timestamp", "record_source", "load_timestamp",
 ]
 ADDRESS_COLUMNS = [
     "address_id", "profile_sk", "profile_id", "address_type",
     "address_line_1", "address_line_2", "city", "state_province",
     "postal_code", "country_code", "latitude", "longitude", "is_primary",
     "address_status", "effective_from_date", "effective_to_date",
-    "current_flag", "record_source", "load_timestamp",
+    "is_current", "created_timestamp", "source_updated_timestamp",
+    "record_source", "load_timestamp",
 ]
 CONTACT_COLUMNS = [
     "contact_id", "profile_sk", "profile_id", "contact_type",
     "contact_value", "country_calling_code", "is_primary", "is_verified",
-    "verified_timestamp", "contact_status", "record_source",
-    "load_timestamp", "updated_timestamp",
+    "verified_timestamp", "contact_status", "created_timestamp",
+    "source_updated_timestamp", "record_source", "load_timestamp",
 ]
 CONSENT_COLUMNS = [
     "consent_id", "profile_sk", "profile_id", "consent_type",
     "consent_status", "legal_basis", "capture_channel",
-    "disclosure_version", "valid_from_timestamp", "valid_to_timestamp",
-    "current_flag", "record_source", "load_timestamp",
+    "disclosure_version", "effective_from_date", "effective_to_date",
+    "is_current", "decision_timestamp", "created_timestamp",
+    "source_updated_timestamp", "record_source", "load_timestamp",
 ]
 ACCOUNT_COLUMNS = [
     "account_id", "account_name", "account_type", "registration_number",
     "tax_id", "gln", "industry_classification_code", "parent_account_id",
     "primary_contact_profile_id", "account_status", "credit_limit_amount",
     "currency_code", "transaction_currency_code", "enrollment_date", "effective_from_date",
-    "effective_to_date", "current_flag", "record_source", "load_timestamp",
+    "effective_to_date", "is_current", "created_timestamp",
+    "source_updated_timestamp", "record_source", "load_timestamp",
 ]
 
 # ------------------------------------------------------------
@@ -189,7 +193,9 @@ def build_profiles(spark, n, seed):
     return (df
             .withColumn("effective_from_date", F.col("enrollment_date"))
             .withColumn("effective_to_date", F.lit(None).cast("date"))
-            .withColumn("current_flag", F.lit(True))
+            .withColumn("is_current", F.lit(True))
+            .withColumn("created_timestamp", F.col("effective_from_date").cast("timestamp"))
+            .withColumn("source_updated_timestamp", F.col("effective_from_date").cast("timestamp"))
             .withColumn("record_source", F.lit(RECORD_SOURCE))
             .withColumn("load_timestamp", F.current_timestamp()))
 
@@ -227,7 +233,9 @@ def build_addresses(spark, profiles_current, seed, max_per):
                          .otherwise(F.lit("inactive")))
             .withColumn("effective_from_date", F.expr("date_add(date'2018-01-01', cast(abs(hash(profile_id, k)) % 3000 as int))"))
             .withColumn("effective_to_date", F.lit(None).cast("date"))
-            .withColumn("current_flag", F.lit(True))
+            .withColumn("is_current", F.lit(True))
+            .withColumn("created_timestamp", F.col("effective_from_date").cast("timestamp"))
+            .withColumn("source_updated_timestamp", F.col("effective_from_date").cast("timestamp"))
             .withColumn("record_source", F.lit(RECORD_SOURCE))
             .withColumn("load_timestamp", F.current_timestamp()))
 
@@ -256,9 +264,12 @@ def build_contacts(spark, profiles_current, seed, max_per):
             .withColumn("verified_timestamp",
                         F.when(F.col("is_verified"), F.current_timestamp()).otherwise(F.lit(None).cast("timestamp")))
             .withColumn("contact_status", _pick(CONTACT_STATUS, seed, "cstat", "profile_id", "k"))
+            # Standard audit block (UTC). Operational table: created at first load,
+            # source_updated tracks the last source change.
+            .withColumn("created_timestamp", F.current_timestamp())
+            .withColumn("source_updated_timestamp", F.current_timestamp())
             .withColumn("record_source", F.lit(RECORD_SOURCE))
-            .withColumn("load_timestamp", F.current_timestamp())
-            .withColumn("updated_timestamp", F.current_timestamp()))
+            .withColumn("load_timestamp", F.current_timestamp()))
 
 
 def build_consents(spark, profiles_current, seed, max_per):
@@ -281,10 +292,15 @@ def build_consents(spark, profiles_current, seed, max_per):
             .withColumn("capture_channel", _pick(CAPTURE_CHANNELS, seed, "cap", "profile_id", "k"))
             .withColumn("disclosure_version",
                         F.when(_frac(seed, "disc", "profile_id", "k") < 0.5, F.lit("v1")).otherwise(F.lit("v2")))
-            .withColumn("valid_from_timestamp",
+            # SCD2 window is date-grained like every other master; decision_timestamp
+            # keeps the legal-grade instant the consent decision was recorded (UTC).
+            .withColumn("decision_timestamp",
                         F.expr("cast(date_add(date'2019-01-01', cast(abs(hash(profile_id, k)) % 2500 as int)) as timestamp)"))
-            .withColumn("valid_to_timestamp", F.lit(None).cast("timestamp"))
-            .withColumn("current_flag", F.lit(True))
+            .withColumn("effective_from_date", F.to_date(F.col("decision_timestamp")))
+            .withColumn("effective_to_date", F.lit(None).cast("date"))
+            .withColumn("is_current", F.lit(True))
+            .withColumn("created_timestamp", F.col("decision_timestamp"))
+            .withColumn("source_updated_timestamp", F.col("decision_timestamp"))
             .withColumn("record_source", F.lit(RECORD_SOURCE))
             .withColumn("load_timestamp", F.current_timestamp()))
 
@@ -341,7 +357,9 @@ def build_accounts(spark, profiles_current, n, seed, base_currency):
                          .otherwise(F.lit(None).cast("string")))
             .withColumn("effective_from_date", F.col("enrollment_date"))
             .withColumn("effective_to_date", F.lit(None).cast("date"))
-            .withColumn("current_flag", F.lit(True))
+            .withColumn("is_current", F.lit(True))
+            .withColumn("created_timestamp", F.col("effective_from_date").cast("timestamp"))
+            .withColumn("source_updated_timestamp", F.col("effective_from_date").cast("timestamp"))
             .withColumn("record_source", F.lit(RECORD_SOURCE))
             .withColumn("load_timestamp", F.current_timestamp()))
 
@@ -364,7 +382,7 @@ def generate(spark, catalog, customer_schema, num_profiles, num_accounts, seed, 
     profiles = build_profiles(spark, num_profiles, seed)
     _write(spark, profiles, fq("profile"), PROFILE_COLUMNS, mode)
     profiles_current = (spark.table(fq("profile"))
-                        .where("current_flag = true")
+                        .where("is_current = true")
                         .select("profile_id", "profile_sk", "first_name", "last_name"))
 
     # 2. children (carry real profile_sk for the declared FK)

@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${calendar_schema}.fx_rate (
   rate                  DECIMAL(18,8) COMMENT 'Multiply a from-currency amount by rate to get the to-currency amount. 1.0 when from = to.',
 
   record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
-  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded (ISO 8601).',
+  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded into the canonical core (UTC, ISO 8601).',
 
   CONSTRAINT pk_fx_rate PRIMARY KEY (fx_rate_sk)
 )

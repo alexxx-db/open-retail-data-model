@@ -9,12 +9,12 @@
 
 -- check: promotion_keys_not_null | severity: error
 SELECT * FROM ${catalog}.${promo_schema}.promotion
-WHERE promo_sk IS NULL OR promo_id IS NULL OR current_flag IS NULL;
+WHERE promo_sk IS NULL OR promo_id IS NULL OR is_current IS NULL;
 
 -- check: promotion_business_key_unique_current | severity: error
 SELECT promo_id, COUNT(*) AS current_versions
 FROM ${catalog}.${promo_schema}.promotion
-WHERE current_flag = true
+WHERE is_current = true
 GROUP BY promo_id
 HAVING COUNT(*) > 1;
 

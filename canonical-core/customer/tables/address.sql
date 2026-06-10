@@ -44,11 +44,13 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.address (
   -- SCD2 versioning (principle #8)
   effective_from_date   DATE    NOT NULL COMMENT 'SCD2: inclusive start date this version became effective.',
   effective_to_date     DATE             COMMENT 'SCD2: exclusive end date; NULL for the current version.',
-  current_flag          BOOLEAN NOT NULL COMMENT 'SCD2: TRUE for the currently active version of this address.',
+  is_current          BOOLEAN NOT NULL COMMENT 'SCD2: TRUE for the currently active version of this address.',
 
-  -- Audit / provenance
+  -- Audit / provenance (standard block; all timestamps UTC)
+  created_timestamp        TIMESTAMP COMMENT 'When the record was created in the source system (UTC, ISO 8601).',
+  source_updated_timestamp TIMESTAMP COMMENT 'When the record was last modified in the source system (UTC, ISO 8601).',
   record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
-  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded into the canonical core (ISO 8601).',
+  load_timestamp        TIMESTAMP COMMENT 'When this row was loaded into the canonical core (UTC, ISO 8601).',
 
   CONSTRAINT pk_address PRIMARY KEY (address_sk)
 )

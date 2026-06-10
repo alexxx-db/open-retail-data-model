@@ -68,11 +68,15 @@ Each table represents one coherent business concept. The original `preference` t
 
 ## 8. Consistent SCD pattern for master tables
 
-Master entities (`profile`, `account`, `address`, `product`) use SCD Type 2:
-- `effective_from_date`, `effective_to_date`, `current_flag`
+Master entities (`profile`, `account`, `address`, `product`, `store`, `supplier`, `promotion`, `consent`) use SCD Type 2:
+- `effective_from_date`, `effective_to_date`, `is_current` — **date-grained on every master** (one consistent SCD2 temporal type). Where instant precision is legally required (e.g. `consent`), keep a *separate* `*_timestamp` column (`decision_timestamp`) rather than promoting the SCD2 window to TIMESTAMP.
 - No destructive update via `last_modified_timestamp` only
 
 Operational entities can use destructive update if history is captured elsewhere (e.g., transaction log).
+
+### 8a. Standard audit block on mutable entities
+
+Every mutable entity (SCD2 masters + operational tables like `contact`/`consent`) carries the same audit block: `created_timestamp` and `source_updated_timestamp` (source-system instants) alongside `record_source` and `load_timestamp` (the pipeline instant). One shape everywhere — no per-table ad-hoc `updated_timestamp`.
 
 ## 9. Strict typing — no `STRING` smuggling
 
@@ -89,6 +93,14 @@ Comments saying "stored as string for flexibility" are a red flag.
 Every monetary column is stored in **one reporting/base currency** (`base_currency`, e.g. `USD`), normalized at ingest. `currency_code` records that base currency and is **constant** across every fact and dimension; `transaction_currency_code` preserves the original currency for lineage only and is never used in arithmetic. The conversion reference is the conformed `calendar.fx_rate` dimension (`to_base(amount) = amount * rate`).
 
 The point: gold aggregations (`SUM(net_revenue)`, `revenue - units * unit_cost`, …) are correct **by construction** — they never sum or subtract mixed currencies. A DQ check on each fact (`*_single_reporting_currency`) enforces the invariant. Storing facts in their original transaction currency and converting in gold is the anti-pattern this avoids.
+
+### 9b. Timestamps are stored in UTC
+
+Every `TIMESTAMP` column holds an instant in **UTC** (the storage contract; column comments say so). Business *dates* (`*_date`, `date_key`) are local calendar dates by design — they are `DATE`, not `TIMESTAMP`. Note that Databricks `TIMESTAMP` is session-zone-aware; adopters reading/writing across zones should set the session to UTC (or use `TIMESTAMP_NTZ` for zone-free wall-clock instants). The rule keeps `created_timestamp` / `source_updated_timestamp` / `load_timestamp` comparable across sources without per-row zone ambiguity.
+
+### 9c. Boolean naming — `is_*`
+
+All boolean columns use the `is_*` prefix (`is_current`, `is_primary`, `is_verified`, `is_weekend`, `is_holiday`). No `*_flag` suffix or bare adjectives — including the SCD2 current-version indicator, which is `is_current` (not `current_flag`).
 
 ## 10. Cross-domain FK direction follows dependency
 

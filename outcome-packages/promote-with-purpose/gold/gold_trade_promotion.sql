@@ -78,7 +78,7 @@ promo_week_count AS (
   FROM ${catalog}.${promo_schema}.promotion p
   JOIN fiscal_weeks fw
     ON fw.fiscal_week_id BETWEEN p.fiscal_week_start AND p.fiscal_week_end
-  WHERE p.current_flag = true
+  WHERE p.is_current = true
   GROUP BY p.promo_sk
 )
 SELECT
@@ -124,5 +124,5 @@ LEFT JOIN baseline b
   ON b.product_sk = sc.product_sk
  AND b.store_sk = sc.store_sk
  AND b.fiscal_week_index = fw.fiscal_week_index
-WHERE p.current_flag = true
+WHERE p.is_current = true
   AND p.promo_id <> 'NO_PROMO';

@@ -6,12 +6,12 @@
 
 -- check: product_keys_not_null | severity: error
 SELECT * FROM ${catalog}.${product_schema}.product
-WHERE product_sk IS NULL OR product_id IS NULL OR current_flag IS NULL;
+WHERE product_sk IS NULL OR product_id IS NULL OR is_current IS NULL;
 
 -- check: product_business_key_unique_current | severity: error
 SELECT product_id, COUNT(*) AS current_versions
 FROM ${catalog}.${product_schema}.product
-WHERE current_flag = true
+WHERE is_current = true
 GROUP BY product_id
 HAVING COUNT(*) > 1;
 

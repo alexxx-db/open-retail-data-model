@@ -11,14 +11,15 @@ Business terms for the ORDM canonical-core **Customer** domain (Unity Catalog sc
 | `profile` | One version per individual customer | SCD2 | Conformed individual-customer master — identity, locale, retail identifiers, lifecycle. Shared by every outcome package. |
 | `address` | One version per customer address | SCD2 | Postal addresses (billing, shipping, home, work). |
 | `contact` | One contact point | Operational (current-state) | Reachable contact points — email / phone. Type+value model. |
-| `consent` | One version per consent decision | Temporal + `current_flag` | **Single source of truth** for opt-ins and processing permissions. |
+| `consent` | One version per consent decision | SCD2 (date) + `decision_timestamp` | **Single source of truth** for opt-ins and processing permissions. Date-grained SCD2 like every other master; `decision_timestamp` keeps the legal-grade instant the decision was recorded. |
 | `account` | One version per organization | SCD2 | Optional B2B organization account a customer transacts on behalf of. |
 
 ## Key concepts
 
 - **Surrogate key (`*_sk`)** — system-generated `BIGINT IDENTITY`, unique per row/version; the declared PRIMARY KEY and the FK/join target for downstream dimensional models.
-- **Business / natural key (`*_id`)** — durable, externally-meaningful identifier, stable across SCD2 versions. Use with `current_flag = TRUE` for "current state" joins.
-- **SCD2 versioning** — `effective_from_date` / `effective_to_date` / `current_flag`. A new version is appended when a tracked attribute changes; the prior version is end-dated. No destructive overwrite of master attributes (principle #8).
+- **Business / natural key (`*_id`)** — durable, externally-meaningful identifier, stable across SCD2 versions. Use with `is_current = TRUE` for "current state" joins.
+- **SCD2 versioning** — `effective_from_date` / `effective_to_date` / `is_current`. A new version is appended when a tracked attribute changes; the prior version is end-dated. No destructive overwrite of master attributes (principle #8).
+- **Audit block** — every mutable entity carries `created_timestamp` and `source_updated_timestamp` (source-system instants) alongside `load_timestamp` (pipeline instant). All timestamps are stored in **UTC** (principle #9b).
 - **Consent is centralized** — marketing and processing permissions exist **only** in `consent`, never as flags on `profile`/`account`/`contact` (principle #5).
 - **No derived columns on masters** — lifetime value, order counts, churn/CLTV scores, last-purchase dates are computed in outcome-package metric views, not stored here (principle #4).
 

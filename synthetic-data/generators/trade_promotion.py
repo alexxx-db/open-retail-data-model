@@ -45,7 +45,8 @@ PRODUCT_COLUMNS = [
     "product_id", "gtin", "sku", "product_name", "brand", "category",
     "subcategory", "department", "unit_of_measure", "list_price", "unit_cost",
     "currency_code", "transaction_currency_code", "product_status", "effective_from_date",
-    "effective_to_date", "current_flag", "record_source", "load_timestamp",
+    "effective_to_date", "is_current", "created_timestamp", "source_updated_timestamp",
+    "record_source", "load_timestamp",
 ]
 FX_RATE_COLUMNS = [
     "fx_rate_id", "date_key", "from_currency_code", "to_currency_code",
@@ -54,7 +55,8 @@ FX_RATE_COLUMNS = [
 STORE_COLUMNS = [
     "store_id", "gln", "store_name", "store_format", "region", "district",
     "city", "state_province", "country_code", "open_date", "store_status",
-    "effective_from_date", "effective_to_date", "current_flag",
+    "effective_from_date", "effective_to_date", "is_current",
+    "created_timestamp", "source_updated_timestamp",
     "record_source", "load_timestamp",
 ]
 FISCAL_CALENDAR_COLUMNS = [
@@ -75,7 +77,8 @@ PROMOTION_COLUMNS = [
     "supplier_share_pct", "start_date", "end_date", "fiscal_week_start",
     "fiscal_week_end", "planned_discount_pct", "planned_lift_pct",
     "planned_trade_spend", "effective_from_date", "effective_to_date",
-    "current_flag", "record_source", "load_timestamp",
+    "is_current", "created_timestamp", "source_updated_timestamp",
+    "record_source", "load_timestamp",
 ]
 PROMOTION_SCOPE_COLUMNS = [
     "scope_id", "promo_sk", "promo_id", "product_sk", "product_id",
@@ -257,7 +260,11 @@ def _stamp_scd2(df, eff_from):
     return (df
             .withColumn("effective_from_date", F.lit(eff_from).cast("date"))
             .withColumn("effective_to_date", F.lit(None).cast("date"))
-            .withColumn("current_flag", F.lit(True))
+            .withColumn("is_current", F.lit(True))
+            # Standard audit block (UTC). Source-system instants approximated by
+            # the version's effective date; load is the pipeline instant.
+            .withColumn("created_timestamp", F.col("effective_from_date").cast("timestamp"))
+            .withColumn("source_updated_timestamp", F.col("effective_from_date").cast("timestamp"))
             .withColumn("record_source", F.lit(RECORD_SOURCE))
             .withColumn("load_timestamp", F.current_timestamp()))
 
@@ -332,7 +339,7 @@ def build_promotions(spark, weeks_rows, n, seed, duration_max, quarter_weights, 
             .withColumn("effective_from_date",
                         F.coalesce(F.col("start_date"), F.lit(calendar_start).cast("date")))
             .withColumn("effective_to_date", F.lit(None).cast("date"))
-            .withColumn("current_flag", F.lit(True))
+            .withColumn("is_current", F.lit(True))
             .withColumn("record_source", F.lit(RECORD_SOURCE))
             .withColumn("load_timestamp", F.current_timestamp()))
 
@@ -465,8 +472,8 @@ def generate(spark, catalog, schemas, cfg, mode, base_currency="USD"):
     # 2. product / store masters
     _write(spark, build_products(spark, cfg["products"], seed, base_currency), fq("product", "product"), PRODUCT_COLUMNS, mode)
     _write(spark, build_stores(spark, cfg["stores"], seed), fq("store", "store"), STORE_COLUMNS, mode)
-    products_current = spark.table(fq("product", "product")).where("current_flag = true")
-    stores_current = spark.table(fq("store", "store")).where("current_flag = true")
+    products_current = spark.table(fq("product", "product")).where("is_current = true")
+    stores_current = spark.table(fq("store", "store")).where("is_current = true")
 
     # 3. promotion calendar (seasonal, windowed)
     weeks_rows = [r.asDict() for r in calendar_tbl
@@ -477,7 +484,7 @@ def generate(spark, catalog, schemas, cfg, mode, base_currency="USD"):
                                   cfg["promo_duration_weeks_max"], cfg["quarter_weights"],
                                   cfg["calendar_start_date"])
     _write(spark, promotions, fq("promo", "promotion"), PROMOTION_COLUMNS, mode)
-    promo_current = spark.table(fq("promo", "promotion")).where("current_flag = true")
+    promo_current = spark.table(fq("promo", "promotion")).where("is_current = true")
     no_promo_sk = promo_current.where(F.col("promo_id") == NO_PROMO_ID).select("promo_sk").first()[0]
 
     # 4. promotion scope (product x store coverage), excluding the NO_PROMO member

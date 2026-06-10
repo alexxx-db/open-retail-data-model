@@ -31,13 +31,14 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.contact (
 
   is_primary            BOOLEAN   COMMENT 'TRUE if this is the primary contact point of its type for the customer.',
   is_verified           BOOLEAN   COMMENT 'TRUE if the contact point has been verified (e.g. confirmed email / SMS).',
-  verified_timestamp    TIMESTAMP COMMENT 'Timestamp the contact point was verified (ISO 8601); NULL if unverified.',
+  verified_timestamp    TIMESTAMP COMMENT 'Timestamp the contact point was verified (UTC, ISO 8601); NULL if unverified.',
   contact_status        STRING    COMMENT 'Deliverability/consent status. Allowed values: active, inactive, bounced, opted_out.',
 
-  -- Audit / provenance
+  -- Audit / provenance (standard block; all timestamps UTC)
+  created_timestamp        TIMESTAMP COMMENT 'When the record was created in the source system (UTC, ISO 8601).',
+  source_updated_timestamp TIMESTAMP COMMENT 'When the record was last modified in the source system (UTC, ISO 8601).',
   record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
-  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was first loaded (ISO 8601).',
-  updated_timestamp     TIMESTAMP COMMENT 'Timestamp this row was last updated (ISO 8601).',
+  load_timestamp        TIMESTAMP COMMENT 'When this row was loaded into the canonical core (UTC, ISO 8601).',
 
   CONSTRAINT pk_contact PRIMARY KEY (contact_sk)
 )

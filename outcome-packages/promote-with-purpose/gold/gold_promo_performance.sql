@@ -51,4 +51,4 @@ SELECT
   (100.0 * (a.promoted_units - a.baseline_units) / NULLIF(a.baseline_units, 0)) AS realized_lift_pct
 FROM agg a
 JOIN ${catalog}.${promo_schema}.promotion p
-  ON p.promo_id = a.promo_id AND p.current_flag = true;
+  ON p.promo_id = a.promo_id AND p.is_current = true;

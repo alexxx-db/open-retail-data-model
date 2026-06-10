@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${calendar_schema}.fiscal_calendar (
   fiscal_week_end_date   DATE COMMENT 'Last date (Saturday) of the fiscal week.',
 
   record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
-  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded (ISO 8601).',
+  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded into the canonical core (UTC, ISO 8601).',
 
   CONSTRAINT pk_fiscal_calendar PRIMARY KEY (calendar_sk)
 )

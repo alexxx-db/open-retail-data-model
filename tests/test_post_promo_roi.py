@@ -96,7 +96,7 @@ def _wk_date(wk):
 def _build(spark):
     spark.createDataFrame(
         [(1, "P1", "bev", 10.0, 6.0, True), (2, "P2", "bev", 10.0, 6.0, True), (3, "P3", "snack", 10.0, 6.0, True)],
-        "product_sk int, product_id string, category string, list_price double, unit_cost double, current_flag boolean",
+        "product_sk int, product_id string, category string, list_price double, unit_cost double, is_current boolean",
     ).createOrReplaceTempView("product")
     spark.createDataFrame(
         [(_wk_date(wk), 202400 + wk, wk) for wk in range(1, 16)],
@@ -110,7 +110,7 @@ def _build(spark):
           datetime.date(2024, 2, 4), datetime.date(2024, 2, 10), 0.0, 30.0, 202405, 202405, True)],
         "promo_sk int, promo_id string, promo_name string, promo_type string, funding_type string, "
         "funded_by string, start_date date, end_date date, planned_trade_spend double, planned_lift_pct double, "
-        "fiscal_week_start int, fiscal_week_end int, current_flag boolean",
+        "fiscal_week_start int, fiscal_week_end int, is_current boolean",
     ).createOrReplaceTempView("promotion")
     spark.createDataFrame([(1, 1, 1), (2, 3, 1)], "promo_sk int, product_sk int, store_sk int") \
          .createOrReplaceTempView("promotion_scope")

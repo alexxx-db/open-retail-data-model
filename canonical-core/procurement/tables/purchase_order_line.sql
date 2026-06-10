@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${procurement_schema}.purchase_order_line 
   order_status          STRING        COMMENT 'Line status. Allowed values: open, received, closed, cancelled.',
 
   record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
-  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded (ISO 8601).',
+  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded into the canonical core (UTC, ISO 8601).',
 
   CONSTRAINT pk_purchase_order_line PRIMARY KEY (po_line_sk)
 )

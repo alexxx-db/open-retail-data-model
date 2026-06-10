@@ -61,11 +61,11 @@ def _view_body():
 def _build(spark):
     spark.createDataFrame(
         [(1, "S1", "S1", "US", True), (2, "S2", "S2", "DE", True), (3, "S3", "S3", "US", True)],
-        "supplier_sk int, supplier_id string, supplier_name string, country_code string, current_flag boolean",
+        "supplier_sk int, supplier_id string, supplier_name string, country_code string, is_current boolean",
     ).createOrReplaceTempView("supplier")
     spark.createDataFrame(
         [(1, "PA", "bev", True), (3, "EX1", "snack", True), (4, "PC", "snack", True)],
-        "product_sk int, product_id string, category string, current_flag boolean",
+        "product_sk int, product_id string, category string, is_current boolean",
     ).createOrReplaceTempView("product")
     # scorecard history: S1 declines (98,95,92,85 -> current 70); S2/S3 single current period
     sc = [(1, "S1", 2024, fp, float(cs)) for fp, cs in [(1, 98), (2, 95), (3, 92), (4, 85), (5, 70)]]

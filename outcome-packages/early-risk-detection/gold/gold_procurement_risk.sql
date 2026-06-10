@@ -46,7 +46,7 @@ WITH w AS (
 supplier_cur AS (
   SELECT supplier_sk, supplier_id, supplier_name, country_code
   FROM ${catalog}.${supplier_schema}.supplier
-  WHERE current_flag = true
+  WHERE is_current = true
 ),
 sc AS (
   SELECT supplier_sk, supplier_id, composite_score,

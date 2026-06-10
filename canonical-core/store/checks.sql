@@ -6,12 +6,12 @@
 
 -- check: store_keys_not_null | severity: error
 SELECT * FROM ${catalog}.${store_schema}.store
-WHERE store_sk IS NULL OR store_id IS NULL OR current_flag IS NULL;
+WHERE store_sk IS NULL OR store_id IS NULL OR is_current IS NULL;
 
 -- check: store_business_key_unique_current | severity: error
 SELECT store_id, COUNT(*) AS current_versions
 FROM ${catalog}.${store_schema}.store
-WHERE current_flag = true
+WHERE is_current = true
 GROUP BY store_id
 HAVING COUNT(*) > 1;
 

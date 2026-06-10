@@ -9,8 +9,9 @@
 -- ============================================================
 -- The single source of truth for customer consent (principle #5).
 -- Marketing opt-ins, data-processing permissions, etc. live ONLY here
--- — never as flags on profile/account/contact. Temporal: each consent
--- decision is a versioned row with validity window + current_flag.
+-- — never as flags on profile/account/contact. Temporal: SCD2, date-grained
+-- like every other master (effective_from_date/effective_to_date/is_current);
+-- decision_timestamp keeps the legal-grade instant the decision was recorded.
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.consent (
@@ -30,14 +31,17 @@ CREATE TABLE IF NOT EXISTS ${catalog}.${customer_schema}.consent (
   capture_channel       STRING COMMENT 'Channel where consent was captured (vendor-neutral). Allowed values: web, mobile_app, store, call_center, email.',
   disclosure_version    STRING COMMENT 'Identifier/version of the consent statement or privacy notice presented at capture.',
 
-  -- Temporal validity
-  valid_from_timestamp  TIMESTAMP NOT NULL COMMENT 'Inclusive start of validity for this consent decision (ISO 8601).',
-  valid_to_timestamp    TIMESTAMP          COMMENT 'Exclusive end of validity; NULL while still in effect (ISO 8601).',
-  current_flag          BOOLEAN   NOT NULL COMMENT 'TRUE for the currently effective consent record per (profile, consent_type).',
+  -- SCD2 versioning (principle #8) — date-grained, conformed to every other master.
+  effective_from_date   DATE      NOT NULL COMMENT 'SCD2: inclusive start date this consent version became effective.',
+  effective_to_date     DATE               COMMENT 'SCD2: exclusive end date; NULL while still in effect.',
+  is_current            BOOLEAN   NOT NULL COMMENT 'SCD2: TRUE for the currently effective consent record per (profile, consent_type).',
+  decision_timestamp    TIMESTAMP COMMENT 'Legal-grade instant the consent decision was given/withdrawn (UTC, ISO 8601).',
 
-  -- Audit / provenance
+  -- Audit / provenance (standard block; all timestamps UTC)
+  created_timestamp        TIMESTAMP COMMENT 'When the record was created in the source system (UTC, ISO 8601).',
+  source_updated_timestamp TIMESTAMP COMMENT 'When the record was last modified in the source system (UTC, ISO 8601).',
   record_source         STRING    COMMENT 'Originating system of record (vendor-neutral label).',
-  load_timestamp        TIMESTAMP COMMENT 'Timestamp this row was loaded into the canonical core (ISO 8601).',
+  load_timestamp        TIMESTAMP COMMENT 'When this row was loaded into the canonical core (UTC, ISO 8601).',
 
   CONSTRAINT pk_consent PRIMARY KEY (consent_sk)
 )

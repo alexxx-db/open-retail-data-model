@@ -39,7 +39,8 @@ except ImportError:  # ensure sibling modules are importable when run as a noteb
 SUPPLIER_COLUMNS = [
     "supplier_id", "gln", "supplier_name", "supplier_type", "country_code",
     "region", "onboarding_date", "supplier_status", "effective_from_date",
-    "effective_to_date", "current_flag", "record_source", "load_timestamp",
+    "effective_to_date", "is_current", "created_timestamp", "source_updated_timestamp",
+    "record_source", "load_timestamp",
 ]
 PO_LINE_COLUMNS = [
     "po_line_id", "po_id", "supplier_sk", "supplier_id", "product_sk",
@@ -127,7 +128,10 @@ def build_suppliers(spark, n, seed, profile_weights):
                                F.expr("date_add(date'2015-01-01', cast(abs(hash(supplier_id)) % 3000 as int))"))
                    .withColumn("effective_from_date", F.col("onboarding_date"))
                    .withColumn("effective_to_date", F.lit(None).cast("date"))
-                   .withColumn("current_flag", F.lit(True))
+                   .withColumn("is_current", F.lit(True))
+                   # Standard audit block (UTC).
+                   .withColumn("created_timestamp", F.col("effective_from_date").cast("timestamp"))
+                   .withColumn("source_updated_timestamp", F.col("effective_from_date").cast("timestamp"))
                    .withColumn("record_source", F.lit(RECORD_SOURCE))
                    .withColumn("load_timestamp", F.current_timestamp()))
     params_df = spark.createDataFrame(param_rows, schema=_PARAM_SCHEMA)
@@ -230,11 +234,11 @@ def generate(spark, catalog, schemas, cfg, mode, base_currency="USD"):
     # 1. suppliers
     supplier_df, params_df = build_suppliers(spark, cfg["suppliers"], seed, cfg["profile_weights"])
     _write(spark, supplier_df, fq("supplier", "supplier"), SUPPLIER_COLUMNS, mode)
-    supplier_current = spark.table(fq("supplier", "supplier")).where("current_flag = true")
+    supplier_current = spark.table(fq("supplier", "supplier")).where("is_current = true")
 
     # 2. conformed dims (must already exist from the trade_promotion generator)
-    products_current = spark.table(fq("product", "product")).where("current_flag = true")
-    stores_current = spark.table(fq("store", "store")).where("current_flag = true")
+    products_current = spark.table(fq("product", "product")).where("is_current = true")
+    stores_current = spark.table(fq("store", "store")).where("is_current = true")
     calendar_tbl = spark.table(fq("calendar", "fiscal_calendar"))
     cal = calendar_tbl.agg(F.min("date_key").alias("mn"), F.count(F.lit(1)).alias("cnt")).first()
     start_date, n_days = cal["mn"], int(cal["cnt"])

@@ -109,9 +109,9 @@ def generate(spark, catalog, schemas, cfg, mode, base_currency="USD"):
     print(f"[ordm] generating Customer LTV orders into {catalog} "
           f"(max_orders={cfg['max_orders']}, value_skew={cfg['value_skew']}, seed={seed}, mode={mode})")
 
-    profiles_current = spark.table(fq("customer", "profile")).where("current_flag = true")
-    products_current = spark.table(fq("product", "product")).where("current_flag = true")
-    stores_current = spark.table(fq("store", "store")).where("current_flag = true")
+    profiles_current = spark.table(fq("customer", "profile")).where("is_current = true")
+    products_current = spark.table(fq("product", "product")).where("is_current = true")
+    stores_current = spark.table(fq("store", "store")).where("is_current = true")
     calendar_tbl = spark.table(fq("calendar", "fiscal_calendar"))
     cal = calendar_tbl.agg(F.min("date_key").alias("mn"), F.count(F.lit(1)).alias("cnt")).first()
     start_date, n_days = cal["mn"], int(cal["cnt"])

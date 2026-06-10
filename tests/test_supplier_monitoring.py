@@ -107,7 +107,7 @@ def _scorecard_body():
 def _build(spark):
     spark.createDataFrame(
         [(1, "SUP1", "Supplier 1", "US", True), (2, "SUP2", "Supplier 2", "DE", True)],
-        "supplier_sk int, supplier_id string, supplier_name string, country_code string, current_flag boolean",
+        "supplier_sk int, supplier_id string, supplier_name string, country_code string, is_current boolean",
     ).createOrReplaceTempView("supplier")
     spark.createDataFrame([(_OD, 2024, 1)], "date_key date, fiscal_year int, fiscal_period int") \
          .createOrReplaceTempView("fiscal_calendar")

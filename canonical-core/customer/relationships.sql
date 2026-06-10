@@ -38,7 +38,7 @@ ALTER TABLE ${catalog}.${customer_schema}.consent
 --
 --   account.primary_contact_profile_id  ->  profile.profile_id
 --   account.parent_account_id           ->  account.account_id   (self, org hierarchy)
---   address.profile_id                  ->  profile.profile_id   (durable join, current_flag = TRUE)
---   contact.profile_id                  ->  profile.profile_id   (durable join, current_flag = TRUE)
---   consent.profile_id                  ->  profile.profile_id   (durable join, current_flag = TRUE)
+--   address.profile_id                  ->  profile.profile_id   (durable join, is_current = TRUE)
+--   contact.profile_id                  ->  profile.profile_id   (durable join, is_current = TRUE)
+--   consent.profile_id                  ->  profile.profile_id   (durable join, is_current = TRUE)
 -- ------------------------------------------------------------
